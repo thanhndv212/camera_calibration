@@ -1,0 +1,51 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.dylib
+
+# Packaging / build
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+*.whl
+*.dist-info/
+
+# Virtual environments
+.env
+.venv
+venv/
+env/
+
+# Testing / coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Type checking
+.mypy_cache/
+.ruff_cache/
+
+# IDE / editors
+.vscode/
+.idea/
+*.swp
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Rerun recordings
+*.rrd
+
+# Project-specific
+*.npz
+*.bak
+*.pkl
+logs/
+*.log
