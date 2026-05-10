@@ -6,13 +6,14 @@ build-backend = "setuptools.build_meta"
 name = "camera_calibration"
 version = "0.1.0"
 description = "Camera calibration and ArUco detection with rerun visualization"
+readme = "README.md"
 license = { text = "Apache-2.0" }
 authors = [{ name = "Thanh Nguyen" }]
 requires-python = ">=3.10"
 dependencies = [
     "opencv-python>=4.7",
     "numpy>=1.24",
-    "rerun-sdk>=0.22",
+    "rerun-sdk>=0.18",
 ]
 
 [project.scripts]

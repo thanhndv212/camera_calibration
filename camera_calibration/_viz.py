@@ -55,7 +55,7 @@ def log_frame(
     if not _RERUN_AVAILABLE:
         return
     if frame_idx is not None:
-        rr.set_time_sequence("frame", frame_idx)
+        rr.set_time("frame", sequence=frame_idx)
     if frame.ndim == 2:
         rr.log(entity, rr.Image(frame))
     else:
@@ -152,14 +152,15 @@ def log_undistorted(
     if not _RERUN_AVAILABLE:
         return
     if frame_idx is not None:
-        rr.set_time_sequence("frame", frame_idx)
+        rr.set_time("frame", sequence=frame_idx)
     h, w = frame_bgr.shape[:2]
     new_K, _ = cv2.getOptimalNewCameraMatrix(
         camera_matrix, dist_coeffs, (w, h), 1, (w, h)
     )
     undistorted = cv2.undistort(frame_bgr, camera_matrix, dist_coeffs, None, new_K)
-    log_frame("camera/original", frame_bgr, frame_idx)
-    log_frame("camera/undistorted", undistorted, frame_idx)
+    # Pass frame_idx=None to avoid re-advancing the timeline (already set above)
+    log_frame("camera/original", frame_bgr)
+    log_frame("camera/undistorted", undistorted)
 
 
 def log_aruco_corners(
@@ -177,7 +178,7 @@ def log_aruco_corners(
     if not _RERUN_AVAILABLE:
         return
     if frame_idx is not None:
-        rr.set_time_sequence("frame", frame_idx)
+        rr.set_time("frame", sequence=frame_idx)
     corners_list = list(corners)
     if not corners_list:
         return
