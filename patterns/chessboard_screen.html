@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SO-ARM webcam calibration — 10×7 inner corners</title>
+  <style>
+    :root { color-scheme: light; font-family: system-ui, sans-serif; }
+    * { box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; margin: 0; }
+    body { display: flex; flex-direction: column; background: #dbe0e7; color: #17212f; }
+    header, footer {
+      display: flex; align-items: center; justify-content: space-between; gap: 16px;
+      padding: 10px 18px; background: #f7f9fc; font-size: 14px;
+    }
+    header strong { font-size: 16px; }
+    button { border: 1px solid #8293a7; border-radius: 6px; padding: 7px 12px; background: white; cursor: pointer; }
+    button:hover { background: #eaf0f8; }
+    #stage { flex: 1; min-height: 0; display: grid; place-items: center; overflow: hidden; }
+    #target { padding: var(--margin, 40px); background: white; box-shadow: 0 3px 18px #0003; }
+    #board {
+      display: grid;
+      grid-template-columns: repeat(11, var(--square, 80px));
+      grid-template-rows: repeat(8, var(--square, 80px));
+    }
+    .black { background: #050505; }
+    .white { background: #fff; }
+    footer { font-size: 13px; }
+    #size { font-variant-numeric: tabular-nums; white-space: nowrap; }
+  </style>
+</head>
+<body>
+  <header>
+    <div><strong>Camera calibration chessboard</strong> · 10×7 inner corners / 11×8 squares</div>
+    <button id="fullscreen" type="button">Full screen</button>
+  </header>
+  <main id="stage" aria-label="Calibration target">
+    <div id="target"><div id="board" role="img" aria-label="Black and white 11 by 8 chessboard with 10 by 7 inner corners"></div></div>
+  </main>
+  <footer>
+    <span>Keep the whole white border visible. Move and tilt the screen between captures; do not move a fixed webcam.</span>
+    <span id="size"></span>
+  </footer>
+  <script>
+    const board = document.getElementById("board");
+    const stage = document.getElementById("stage");
+    const target = document.getElementById("target");
+    const sizeLabel = document.getElementById("size");
+    for (let row = 0; row < 8; row++) {
+      for (let col = 0; col < 11; col++) {
+        const cell = document.createElement("div");
+        cell.className = (row + col) % 2 === 0 ? "black" : "white";
+        board.appendChild(cell);
+      }
+    }
+    function fitBoard() {
+      // Target including its white margin is 12 by 9 squares at most.
+      const square = Math.max(12, Math.floor(Math.min(
+        (stage.clientWidth - 48) / 12,
+        (stage.clientHeight - 48) / 9
+      )));
+      target.style.setProperty("--square", `${square}px`);
+      target.style.setProperty("--margin", `${Math.floor(square / 2)}px`);
+      sizeLabel.textContent = `Square: ${square} CSS px · display: ${screen.width}×${screen.height} @${devicePixelRatio}× · measure for metric scale`;
+    }
+    new ResizeObserver(fitBoard).observe(stage);
+    fitBoard();
+    document.getElementById("fullscreen").addEventListener("click", () => {
+      document.documentElement.requestFullscreen();
+    });
+  </script>
+</body>
+</html>
