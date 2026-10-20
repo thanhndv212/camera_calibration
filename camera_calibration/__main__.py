@@ -17,6 +17,9 @@ view        Load a calibration JSON and display its summary in rerun.
 workbench   Browser workbench: any camera source, live coverage feedback, solve, save.
 solve       Calibrate from a directory or video of board images, no GUI.
 target      Write a printable calibration board (ChArUco by default).
+bench       Frame rate, jitter, stalls, image quality and lag of any camera, headless.
+clock-page  Write the screen clock that bench --clock reads lag from.
+esp32-mock  Fake ESP32 CameraWebServer, for testing without a board.
 
 Global rerun flags (available on all subcommands)
 -------------------------------------------------
@@ -27,6 +30,7 @@ Global rerun flags (available on all subcommands)
 from __future__ import annotations
 
 import argparse
+import json
 from pathlib import Path
 from typing import Tuple
 
@@ -251,6 +255,57 @@ def cmd_target(args: argparse.Namespace) -> None:
           f"{args.dpi} dpi; print at 100% and measure a square before calibrating")
 
 
+def cmd_bench(args: argparse.Namespace) -> None:
+    """Benchmark a camera headless: the workbench's jobs, report to --out."""
+    from .workbench import Workbench
+    from .workbench.jobs import DEFAULT_FRAMESIZES
+
+    wb = Workbench(args.source, args.target, save_dir=args.out)
+    try:
+        src = wb.loop.source
+        if args.info:
+            print(json.dumps(wb.loop.info.to_dict(), indent=2, default=str))
+            for c in src.controls():
+                print(f"  {c.name:16s} {c.value!s:8s} {c.label}")
+            return
+        if args.aruco:
+            wb.set_overlay({"aruco": True, "aruco_dict": args.aruco})
+        snap = args.snapshots is not None
+        kind = ("snapshot-sweep" if snap else "stream-sweep") if args.sweep else (
+            "snapshots" if snap else "stream")
+        params = {"duration": args.duration, "clock": args.clock, "n": args.snapshots or 30,
+                  "framesizes": args.framesizes or DEFAULT_FRAMESIZES}
+        if args.clock:
+            print("lag clock: open `camera-calibration clock-page --out clock.html` on a screen "
+                  "of this machine and keep only its marker in view", flush=True)
+        try:
+            wb.jobs.start(kind, params)
+        except RuntimeError as exc:
+            raise SystemExit(f"{kind}: {exc}")
+        status = wb.jobs.wait()
+    finally:
+        wb.close()
+    if status.get("error"):
+        raise SystemExit(f"{kind} failed: {status['error']}")
+    print(json.dumps(status["result"], indent=2, default=str))
+    print(f"report: {status['report']}")
+
+
+def cmd_clock_page(args: argparse.Namespace) -> None:
+    """Write the lag-clock page (the workbench also serves it at /clock)."""
+    from .bench import clock_page_html
+
+    args.out.write_text(clock_page_html(args.dictionary, args.period_ms))
+    print(f"wrote {args.out} — open it on a screen of the machine that runs the benchmark")
+
+
+def cmd_esp32_mock(args: argparse.Namespace) -> None:
+    """Serve a fake ESP32 CameraWebServer."""
+    from .esp32_mock import serve
+
+    serve(args.bind, args.port, jitter=not args.no_jitter)
+
+
 def cmd_view(args: argparse.Namespace) -> None:
     """Load a calibration JSON and display its summary in rerun."""
     import numpy as np
@@ -382,6 +437,37 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--save-dir", type=Path, default=Path("runs/workbench"), dest="save_dir")
     p.add_argument("--open", action="store_true", help="open the page in the default browser")
 
+    # -- bench ---------------------------------------------------------------
+    p = sub.add_parser("bench", help="Measure frame rate, jitter, stalls, quality and lag")
+    p.add_argument("--source", required=True, metavar="URI",
+                   help="any camera URI: esp32:HOST, uvc:0, mjpeg:URL, mock:")
+    p.add_argument("--duration", type=float, default=10, help="seconds per stream run")
+    p.add_argument("--snapshots", type=int, default=None, metavar="N",
+                   help="time N /capture stills instead of the stream (ESP32 only)")
+    p.add_argument("--sweep", action="store_true",
+                   help="repeat at each --framesizes value, then restore the original")
+    p.add_argument("--framesizes", default=None, help="comma-separated (default 6,8,10,11,12,13)")
+    p.add_argument("--clock", action="store_true",
+                   help="measure glass-to-host lag from the clock page (see clock-page)")
+    p.add_argument("--aruco", default=None, metavar="DICT",
+                   help="also count ArUco markers, e.g. DICT_4X4_50")
+    p.add_argument("--target", default=DEFAULT_TARGET, metavar="SPEC",
+                   help="board whose detection rate to report (default: %(default)s)")
+    p.add_argument("--info", action="store_true", help="print the source and its controls, then exit")
+    p.add_argument("--out", type=Path, default=Path("runs"),
+                   help="reports go to OUT/bench_<time>/ (default: %(default)s)")
+
+    p = sub.add_parser("clock-page", help="Write the lag-clock page for bench --clock")
+    p.add_argument("--out", type=Path, default=Path("clock.html"))
+    p.add_argument("--dictionary", default="DICT_4X4_50")
+    p.add_argument("--period-ms", type=int, default=100, dest="period_ms")
+
+    p = sub.add_parser("esp32-mock", help="Fake ESP32 CameraWebServer for testing without a board")
+    p.add_argument("--bind", default="127.0.0.1")
+    p.add_argument("--port", type=int, default=8080, help="control port; the stream is PORT+1")
+    p.add_argument("--no-jitter", action="store_true", dest="no_jitter",
+                   help="no simulated Wi-Fi latency or stalls")
+
     # -- solve ---------------------------------------------------------------
     p = sub.add_parser("solve", help="Calibrate from saved images, no GUI")
     p.add_argument("--from", dest="source", required=True, metavar="URI",
@@ -413,6 +499,9 @@ _COMMANDS = {
     "workbench": cmd_workbench,
     "solve":    cmd_solve,
     "target":   cmd_target,
+    "bench":    cmd_bench,
+    "clock-page": cmd_clock_page,
+    "esp32-mock": cmd_esp32_mock,
 }
 
 # Import DEFAULT_DICT_NAME for use in the parser definition above

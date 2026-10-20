@@ -71,8 +71,9 @@ class Control:
     value: Any
     min: Optional[float] = None
     max: Optional[float] = None
-    choices: Optional[List[Any]] = None
+    choices: Optional[List[Any]] = None  # values, or [value, label] pairs
     label: str = ""
+    group: str = ""  # heading the GUI files the control under
 
     def to_dict(self) -> dict:
         return {k: v for k, v in self.__dict__.items() if v is not None and v != ""}

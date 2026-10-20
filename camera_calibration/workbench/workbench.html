@@ -129,6 +129,29 @@ a { color: var(--accent); }
 .video .hud { position: absolute; left: 10px; top: 10px; right: 10px; display: flex; gap: 6px; flex-wrap: wrap; }
 .video .hud span { background: rgba(0,0,0,.62); color: #fff; font: 11px/1.6 var(--mono); padding: 1px 7px; border-radius: 4px; }
 .video .hud span.hint { font-family: system-ui, sans-serif; font-weight: 600; }
+.subhead { font-size: 12px; font-weight: 650; color: var(--text-secondary); margin: 14px 0 4px; }
+.chart { position: relative; margin: 4px 0 10px; }
+.chart .title { font-size: 11px; color: var(--text-muted); display: flex; justify-content: space-between; }
+.chart .title b { font: 600 11px var(--mono); color: var(--text-secondary); }
+.chart .plot { height: 80px; position: relative; }
+.chart svg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; overflow: visible; }
+.chart .tip { position: absolute; top: -4px; z-index: 2; pointer-events: none; background: var(--surface-1); border: 1px solid var(--border);
+  border-radius: 5px; padding: 1px 6px; font: 11px var(--mono); white-space: nowrap; display: none; }
+.prog { height: 4px; background: var(--surface-3); border-radius: 2px; overflow: hidden; margin: 8px 0 4px; }
+.prog div { height: 100%; width: 0; background: var(--accent); transition: width .3s; }
+.field input[type=text], .field select { width: 100%; }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 8px; }
+dialog { border: 1px solid var(--border); border-radius: 10px; background: var(--surface-1); color: var(--text-primary);
+  padding: 0; width: min(1100px, calc(100vw - 32px)); max-height: calc(100vh - 48px); }
+dialog::backdrop { background: rgba(0,0,0,.35); }
+dialog .dhead { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--border); }
+dialog .dhead h2 { font-size: 14px; margin: 0; flex: 1; }
+dialog .dbody { padding: 12px 16px 16px; overflow: auto; max-height: calc(100vh - 140px); }
+dialog table { border-collapse: collapse; width: 100%; font: 12px var(--mono); font-variant-numeric: tabular-nums; }
+dialog th { font: 600 11px system-ui, sans-serif; color: var(--text-muted); text-align: right; padding: 4px 8px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+dialog td { text-align: right; padding: 4px 8px; border-bottom: 1px solid var(--grid); white-space: nowrap; }
+dialog th:first-child, dialog td:first-child { text-align: left; }
+dialog .tiles { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
 header .srcbox { display: flex; gap: 6px; flex: 1; min-width: 0; max-width: 620px; }
 header .srcbox input { flex: 1; }
 @media (max-width: 900px) {
@@ -163,6 +186,7 @@ header .srcbox input { flex: 1; }
       <div class="tabs" role="tablist">
         <button role="tab" data-tab="calib" aria-selected="true">Calibrate</button>
         <button role="tab" data-tab="results" aria-selected="false">Results</button>
+        <button role="tab" data-tab="bench" aria-selected="false">Benchmark</button>
         <button role="tab" data-tab="source" aria-selected="false">Source</button>
       </div>
       <section class="tabpanel" id="tab-calib">
@@ -213,19 +237,48 @@ header .srcbox input { flex: 1; }
           <p class="note">Drop removes a view and solves again; held-out views are not used in the solve.</p>
         </div>
       </section>
+      <section class="tabpanel" id="tab-bench" hidden>
+        <h3>Live</h3>
+        <div class="tiles" id="live"></div>
+        <h3>Last two minutes</h3>
+        <div class="chart" id="c-fps"><div class="title"><span>Frame rate</span><b id="c-fps-v"></b></div><div class="plot"></div></div>
+        <div class="chart" id="c-gap"><div class="title"><span>Interval p95 · dashed = 250 ms stall</span><b id="c-gap-v"></b></div><div class="plot"></div></div>
+        <h3>Run</h3>
+        <div class="field"><label for="jobKind">Benchmark</label><select id="jobKind"></select></div>
+        <div class="note" id="jobWhy"></div>
+        <div class="grid2">
+          <div class="field" data-param="duration"><label for="pDuration">Seconds (per size)</label><input id="pDuration" type="text" value="10"></div>
+          <div class="field" data-param="n"><label for="pN">Captures</label><input id="pN" type="text" value="30"></div>
+          <div class="field" data-param="framesizes"><label for="pSizes">Frame sizes</label><input id="pSizes" type="text" value="6,8,10,11,12,13"></div>
+        </div>
+        <div class="row" data-param="clock"><label class="check"><input type="checkbox" id="pClock"> Measure lag</label>
+          <a href="/clock" target="_blank">open the lag clock</a></div>
+        <div class="row"><button id="runJob">Run</button><button class="secondary" id="lastResult" hidden>Last result</button></div>
+        <div class="prog"><div id="prog"></div></div>
+        <div class="note" id="jobNote">The stream benchmark works on any camera. Sweeps step the frame size and restore it; snapshot jobs pause the stream.</div>
+      </section>
       <section class="tabpanel" id="tab-source" hidden>
         <h3>Camera</h3>
         <div class="tiles" id="srcInfo"></div>
         <div class="row"><button class="secondary" id="snapshot">Save snapshot</button></div>
         <div class="note" id="snapNote"></div>
+        <h3>Overlay</h3>
+        <div class="row"><label class="check"><input type="checkbox" id="ovAruco"> ArUco markers</label>
+          <select id="ovDict"></select></div>
+        <div class="row"><label class="check"><input type="checkbox" id="ovGrid"> Thirds grid</label></div>
         <h3>Controls</h3>
         <div id="controls"><div class="note">This source has no adjustable settings.</div></div>
       </section>
     </aside>
   </main>
 </div>
+<dialog id="resultsDlg">
+  <div class="dhead"><h2 id="resultsTitle">Result</h2><button class="secondary" onclick="this.closest('dialog').close()">Close</button></div>
+  <div class="dbody" id="results"></div>
+</dialog>
 <script>
 const $ = (id) => document.getElementById(id);
+const esc = (t) => String(t ?? "").replace(/[&<>"]/g, (ch) => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"})[ch]);
 const fmt = (v, d = 2) => (v === null || v === undefined || Number.isNaN(v)) ? "—" : Number(v).toFixed(d);
 let state = null, controlsKey = "", dragging = false, specEdited = false;
 
@@ -292,13 +345,18 @@ function renderControls(ctrls) {
     const box = $("controls");
     if (!ctrls.length) { box.innerHTML = '<div class="note">This source has no adjustable settings.</div>'; return; }
     box.innerHTML = "";
+    let group = null;
     for (const c of ctrls) {
+      if (c.group && c.group !== group) {
+        group = c.group;
+        const h = document.createElement("div"); h.className = "subhead"; h.textContent = group; box.appendChild(h);
+      }
       const row = document.createElement("div"); row.className = "ctl";
       const label = `<label>${c.label || c.name}</label>`;
       if (c.kind === "bool") {
         row.innerHTML = `<label class="check"><input type="checkbox" data-name="${c.name}"> ${c.label || c.name}</label>`;
       } else if (c.kind === "choice") {
-        row.innerHTML = label + `<span></span><select data-name="${c.name}">${(c.choices || []).map((v) => `<option>${v}</option>`).join("")}</select>`;
+        row.innerHTML = label + `<span></span><select data-name="${c.name}">${(c.choices || []).map((o) => Array.isArray(o) ? `<option value="${o[0]}">${esc(o[1])}</option>` : `<option>${esc(o)}</option>`).join("")}</select>`;
       } else {
         row.innerHTML = label + `<output></output><input type="range" data-name="${c.name}" min="${c.min ?? 0}" max="${c.max ?? 100}" step="1">`;
       }
@@ -334,6 +392,8 @@ function render(s) {
     $("pill").textContent = st?.error ? "error" : st?.ended ? "ended" : "streaming";
     $("pill").className = "pill " + (st?.error ? "error" : st?.ended ? "paused" : "streaming");
     if ($("img").hidden) startVideo();
+  } else if (s.paused) {
+    $("pill").textContent = "paused for benchmark"; $("pill").className = "pill paused";
   } else if (s.error) { $("msg").textContent = s.error; }
   if (!specEdited && document.activeElement !== $("spec")) $("spec").value = s.target_spec;
   if (document.activeElement !== $("model")) $("model").value = s.model;
@@ -372,8 +432,12 @@ function render(s) {
   if (src) {
     $("srcInfo").innerHTML = [["name", src.name], ["transport", src.transport], ["id", src.unique_id || "—"], ["fps (nominal)", src.fps ?? "—"]]
       .map(([k, v]) => `<div class="tile"><div class="k">${k}</div><div class="v" title="${v}">${v}</div></div>`).join("");
-    renderControls(s.controls || []);
   }
+  if (src || s.paused) renderControls(s.controls || []);
+  renderOverlay(s);
+  renderLive(s);
+  drawCharts(s.history || []);
+  renderJobs(s);
   renderResult(res, cal);
 }
 
@@ -391,6 +455,200 @@ function renderResult(r, cal) {
   const max = Math.max(...rows.map((x) => x.e ?? 0), 1e-6), worst = Math.max(...r.per_view_errors);
   $("views").innerHTML = rows.map((x) => `<div class="view"><span>#${x.i}</span><div class="bar"><div class="${x.held ? "held" : x.e === worst ? "worst" : ""}" style="width:${100 * (x.e ?? 0) / max}%"></div></div><span>${fmt(x.e, 3)}</span><button class="ghost" data-drop="${x.i}" title="Drop this view">✕</button></div>`).join("");
   $("views").querySelectorAll("[data-drop]").forEach((b) => b.onclick = () => api("/api/calib/drop", {index: +b.dataset.drop}).then(() => showError()).catch(showError));
+}
+
+// ---- overlay settings ------------------------------------------------------
+function renderOverlay(s) {
+  const o = s.overlay; if (!o) return;
+  if (!$("ovDict").options.length) $("ovDict").innerHTML = s.aruco_dicts.map((d) => `<option>${d}</option>`).join("");
+  if (document.activeElement !== $("ovDict")) $("ovDict").value = o.aruco_dict;
+  $("ovAruco").checked = o.aruco; $("ovGrid").checked = o.grid;
+}
+const sendOverlay = () => api("/api/overlay", {aruco: $("ovAruco").checked, grid: $("ovGrid").checked, aruco_dict: $("ovDict").value})
+  .catch((e) => $("snapNote").textContent = e.message);
+$("ovAruco").onchange = $("ovGrid").onchange = $("ovDict").onchange = sendOverlay;
+
+// ---- live tiles ----------------------------------------------------------------
+function tile(k, v, cls = "") { return `<div class="tile"><div class="k">${k}</div><div class="v ${cls}">${v}</div></div>`; }
+function renderLive(s) {
+  const st = s.stats || {}, L = s.live || {}, ifm = st.interframe_ms || {};
+  const ids = L.aruco_ids, aruco = !s.overlay?.aruco ? "off" : !ids ? "—" : ids.length ? ids.join(",") : "none";
+  const fb = s.calib?.feedback || {};
+  $("live").innerHTML = [
+    tile("frame rate", fmt(st.camera_fps, 1) + " fps"),
+    tile("interval p50 · p95", `${fmt(ifm.p50, 0)} · ${fmt(ifm.p95, 0)} ms`, ifm.p95 > 250 ? "warn" : ""),
+    tile("interval max", fmt(ifm.max, 0) + " ms", ifm.max > 250 ? "warn" : ""),
+    tile("stalls > 250 ms", `${st.stalls_last_min ?? "—"}/min · ${st.stalls_total ?? "—"}`, st.stalls_last_min ? "warn" : ""),
+    tile("resolution", st.resolution ? st.resolution.join("×") : "—"),
+    tile("JPEG size", st.jpeg_kb != null ? fmt(st.jpeg_kb, 1) + " KB" : "—"),
+    tile("sharpness (lap var)", fmt(L.sharpness, 0)),
+    tile("brightness /255", fmt(L.brightness, 0)),
+    tile("temporal noise σ", fmt(L.temporal_noise, 2)),
+    tile("clipped", fmt(L.clipped_pct, 1) + " %", L.clipped_pct > 5 ? "warn" : ""),
+    tile("ArUco IDs", esc(aruco), ids?.length ? "ok" : ""),
+    tile("smallest marker edge", L.aruco_min_edge_px != null ? fmt(L.aruco_min_edge_px, 0) + " px" : "—"),
+    tile("ArUco detect rate", L.aruco_detect_rate != null ? Math.round(L.aruco_detect_rate * 100) + " %" : "—"),
+    tile("target corners", s.job?.running ? "paused" : fb.points ? fb.points : "none", fb.points ? "ok" : ""),
+  ].join("");
+  $("c-fps-v").textContent = st.camera_fps != null ? fmt(st.camera_fps, 1) + " fps" : "";
+  $("c-gap-v").textContent = ifm.p95 != null ? fmt(ifm.p95, 0) + " ms" : "";
+}
+
+// ---- charts: one series each, one axis, hover crosshair -----------------------
+function lineChart(el, pts, {yMin = 0, ref = null, unit = ""}) {
+  const plot = el.querySelector(".plot");
+  if (!plot.offsetParent) return;  // tab hidden
+  const W = plot.clientWidth || 280, H = Math.max(plot.clientHeight, 30), padL = 28, padR = 4, padT = 4, padB = 4;
+  const css = getComputedStyle(document.documentElement), c = (n) => css.getPropertyValue(n).trim();
+  let svg = plot.querySelector("svg");
+  if (!svg) {
+    svg = document.createElementNS("http://www.w3.org/2000/svg", "svg"); plot.appendChild(svg);
+    const tip = document.createElement("div"); tip.className = "tip"; plot.appendChild(tip);
+    svg.addEventListener("mousemove", (e) => hover(plot, e));
+    svg.addEventListener("mouseleave", () => { plot.querySelector(".tip").style.display = "none"; svg.querySelector(".xh")?.remove(); });
+  }
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  const vals = pts.map((p) => p.v).filter((v) => v != null);
+  const yMax = Math.max(...vals, ref || 0, 1) * 1.15;
+  const t0 = pts.length ? pts[0].t : 0, t1 = pts.length ? Math.max(pts[pts.length - 1].t, t0 + 1) : 1;
+  const X = (t) => padL + ((t - t0) / (t1 - t0)) * (W - padL - padR);
+  const Y = (v) => padT + (1 - (v - yMin) / (yMax - yMin)) * (H - padT - padB);
+  let g = [yMin, yMax / 1.15].map((v) => `<line x1="${padL}" x2="${W - padR}" y1="${Y(v)}" y2="${Y(v)}" stroke="${c("--grid")}" stroke-width="1"/>
+    <text x="${padL - 5}" y="${Y(v) + 3.5}" text-anchor="end" font-size="9.5" fill="${c("--text-muted")}">${v.toFixed(0)}</text>`).join("");
+  if (ref != null) g += `<line x1="${padL}" x2="${W - padR}" y1="${Y(ref)}" y2="${Y(ref)}" stroke="${c("--text-muted")}" stroke-dasharray="3 3" stroke-width="1"/>`;
+  // A null point (stream paused for a benchmark, no source) breaks the line rather than bridging it.
+  let d = "", pen = false;
+  for (const p of pts) {
+    if (p.v == null) { pen = false; continue; }
+    d += `${pen ? "L" : "M"}${X(p.t).toFixed(1)},${Y(p.v).toFixed(1)}`; pen = true;
+  }
+  g += `<path d="${d}" fill="none" stroke="${c("--series-1")}" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/>`;
+  svg.innerHTML = g;
+  plot._chart = {pts, X, Y, padT, H, padB, unit, color: c("--series-1"), surface: c("--surface-1")};
+}
+function hover(plot, e) {
+  const ch = plot._chart; if (!ch || !ch.pts.length) return;
+  const svg = plot.querySelector("svg"), r = svg.getBoundingClientRect();
+  const vb = svg.viewBox.baseVal, x = ((e.clientX - r.left) / r.width) * vb.width;
+  let best = null, bd = Infinity;
+  for (const p of ch.pts) { if (p.v == null) continue; const dd = Math.abs(ch.X(p.t) - x); if (dd < bd) { bd = dd; best = p; } }
+  if (!best) return;
+  let xh = svg.querySelector(".xh");
+  if (!xh) { xh = document.createElementNS("http://www.w3.org/2000/svg", "g"); xh.setAttribute("class", "xh"); svg.appendChild(xh); }
+  const px = ch.X(best.t), py = ch.Y(best.v);
+  xh.innerHTML = `<line x1="${px}" x2="${px}" y1="${ch.padT}" y2="${ch.H - ch.padB}" stroke="${ch.color}" stroke-opacity=".35"/>
+    <circle cx="${px}" cy="${py}" r="3.5" fill="${ch.color}" stroke="${ch.surface}" stroke-width="2"/>`;
+  const tip = plot.querySelector(".tip"), ago = Math.round(ch.pts[ch.pts.length - 1].t - best.t);
+  tip.textContent = `${best.v.toFixed(1)} ${ch.unit} · ${ago ? ago + " s ago" : "now"}`;
+  tip.style.display = "block";
+  const left = (px / vb.width) * r.width;
+  tip.style.left = Math.min(Math.max(0, left - tip.offsetWidth / 2), r.width - tip.offsetWidth) + "px";
+}
+function drawCharts(h) {
+  lineChart($("c-fps"), h.map((p) => ({t: p.t, v: p.fps})), {unit: "fps"});
+  lineChart($("c-gap"), h.map((p) => ({t: p.t, v: p.p95})), {ref: 250, unit: "ms"});
+}
+
+// ---- benchmark jobs ------------------------------------------------------------
+let jobsKey = "", shownResult = null, wasRunning = false;
+function renderJobs(s) {
+  const jobs = s.jobs || [], job = s.job || {};
+  const key = JSON.stringify(jobs.map((j) => [j.kind, j.available]));
+  if (key !== jobsKey) {
+    jobsKey = key;
+    const cur = $("jobKind").value;
+    $("jobKind").innerHTML = jobs.map((j) => `<option value="${j.kind}"${j.available ? "" : " disabled"}>${esc(j.label)}${j.available ? "" : " — " + esc(j.why)}</option>`).join("");
+    const keep = jobs.find((j) => j.kind === cur && j.available) || jobs.find((j) => j.available);
+    if (keep) $("jobKind").value = keep.kind;
+    showParams();
+  }
+  const sel = jobs.find((j) => j.kind === $("jobKind").value);
+  $("jobWhy").textContent = sel && !sel.available ? sel.why : "";
+  $("runJob").disabled = !!job.running || !sel?.available;
+  $("prog").style.width = Math.round((job.progress || 0) * 100) + "%";
+  if (job.running) $("jobNote").textContent = `${job.label} running… ${Math.round(job.progress * 100)}%`;
+  else if (job.error) $("jobNote").innerHTML = `<span class="bad">✕ ${esc(job.error)}</span>`;
+  else if (job.result) $("jobNote").innerHTML = `${esc(job.label)} finished ${esc(job.finished_utc)}. Report: <code>${esc(job.report)}</code>`;
+  const rkey = job.result && !job.running ? job.report : null;
+  if (rkey && rkey !== shownResult) {
+    const first = shownResult === null;
+    shownResult = rkey; renderJobResult(job);
+    $("lastResult").hidden = false;
+    // Pop the dialog for a job that just finished, not one left over from before a reload.
+    if (!first || wasRunning) $("resultsDlg").showModal();
+  }
+  wasRunning = !!job.running;
+}
+function showParams() {
+  const sel = (state?.jobs || []).find((j) => j.kind === $("jobKind").value);
+  document.querySelectorAll("[data-param]").forEach((el) => el.hidden = !sel || !sel.params.includes(el.dataset.param));
+}
+$("jobKind").onchange = showParams;
+$("lastResult").onclick = () => $("resultsDlg").showModal();
+$("runJob").onclick = () => {
+  const params = {duration: +$("pDuration").value || 10, n: +$("pN").value || 30, framesizes: $("pSizes").value.trim(), clock: $("pClock").checked};
+  api("/api/job", {kind: $("jobKind").value, params}).then(() => { wasRunning = true; })
+    .catch((e) => $("jobNote").innerHTML = `<span class="bad">✕ ${esc(e.message)}</span>`);
+};
+
+function renderJobResult(job) {
+  const r = job.result, meta = job.meta || {};
+  const s = (o, k, d = 0) => (o && o[k] != null ? fmt(o[k], d) : "–");
+  const pct = (v) => (v == null ? "–" : Math.round(v * 100) + "%");
+  const when = meta.utc ? ` · ${meta.utc.replace("T", " ").replace("Z", " UTC")}` : "";
+  const lag = !!meta.clock;
+  const sizeCell = (x) => x.framesize != null ? `${x.framesize} · ${esc(x.name)}` : "";
+  const errRow = (x, n) => `<tr><td>${x.framesize}</td><td colspan="${n}" class="bad" style="text-align:left;white-space:normal">✕ ${esc(x.error)}</td></tr>`;
+  const lagNote = lag ? `Lag is glass-to-host: clock time on screen to frame receipt, including the screen's own display delay (about one refresh). Each sample is ±${meta.clock.period_ms / 2} ms; the median isn't.`
+    : "Tick Measure lag with the lag clock in view to add glass-to-host lag.";
+  const streamRow = (x) => `<td>${x.resolutions.join(",") || "–"}</td><td>${fmt(x.fps)}</td>
+      <td>${s(x.interframe_ms, "p50")}</td><td>${s(x.interframe_ms, "p95")}</td><td>${s(x.interframe_ms, "max")}</td>
+      <td class="${x.stalls_over_250ms ? "bad" : ""}">${x.stalls_over_250ms}</td><td>${s(x.jpeg_kb, "mean", 1)}</td>
+      ${lag ? `<td>${s(x.lag_ms, "p50")}</td><td>${s(x.lag_ms, "p95")}</td><td class="${x.clock_ok === false ? "bad" : ""}" title="${x.clock_ok === false ? "a marker was seen but its ID never cycled: not the lag clock" : ""}">${pct(x.clock_detect_rate)}${x.clock_ok === false ? " ✕" : ""}</td>` : ""}
+      <td>${s(x.sharpness, "mean")}</td><td>${fmt(x.temporal_noise, 2)}</td><td>${pct(x.aruco_detect_rate)}</td><td>${pct(x.target_detect_rate)}</td>`;
+  const streamHead = `<th>Resolution</th><th>fps</th><th>Gap p50</th><th>Gap p95</th><th>Gap max</th><th>Stalls</th><th>KB</th>
+      ${lag ? "<th>Lag p50</th><th>Lag p95</th><th>Clock seen</th>" : ""}<th>Sharpness</th><th>Noise σ</th><th>ArUco</th><th>Target</th>`;
+  const snapRow = (x) => `<td>${x.resolutions.join(",") || "–"}</td><td>${x.ok}/${x.requested}</td>
+      <td>${s(x.latency_ms, "p50")}</td><td>${s(x.latency_ms, "p95")}</td><td>${fmt(x.effective_fps)}</td><td>${s(x.jpeg_kb, "mean", 1)}</td>
+      <td>${s(x.sharpness, "mean")}</td><td>${fmt(x.temporal_noise, 2)}</td><td>${pct(x.aruco_detect_rate)}</td><td>${pct(x.target_detect_rate)}</td>`;
+  const snapHead = `<th>Resolution</th><th>OK</th><th>p50 ms</th><th>p95 ms</th><th>Snap fps</th><th>KB</th><th>Sharpness</th><th>Noise σ</th><th>ArUco</th><th>Target</th>`;
+  if (Array.isArray(r) && job.kind === "stream-sweep") {
+    $("resultsTitle").textContent = `Stream sweep · ${job.params?.duration ?? "?"} s per size${when}`;
+    $("results").innerHTML = `<table><thead><tr><th>Framesize</th>${streamHead}</tr></thead><tbody>
+      ${r.map((x) => x.error ? errRow(x, 14) : `<tr><td>${sizeCell(x)}</td>${streamRow(x)}</tr>`).join("")}</tbody></table>
+      <p class="note">Rate, gaps and stalls cover every frame the camera delivered (host receive times); quality is sampled. ${lagNote}</p>`;
+  } else if (Array.isArray(r)) {
+    $("resultsTitle").textContent = `Snapshot sweep${when}`;
+    $("results").innerHTML = `<table><thead><tr><th>Framesize</th>${snapHead}</tr></thead><tbody>
+      ${r.map((x) => x.error ? errRow(x, 10) : `<tr><td>${sizeCell(x)}</td>${snapRow(x)}</tr>`).join("")}</tbody></table>
+      <p class="note">Snapshot latency is the full HTTP round trip on the host clock. Sharpness is comparable only between rows of the same scene.</p>`;
+  } else if (r.mode === "stream") {
+    $("resultsTitle").textContent = `Stream benchmark · ${r.frames} frames in ${fmt(r.duration_s, 1)} s${when}`;
+    $("results").innerHTML = `<div class="tiles">${[
+      tile("frame rate", fmt(r.fps) + " fps"), tile("interval p50", s(r.interframe_ms, "p50") + " ms"),
+      tile("interval p95", s(r.interframe_ms, "p95") + " ms"), tile("interval max", s(r.interframe_ms, "max") + " ms"),
+      tile("stalls > 250 ms", r.stalls_over_250ms, r.stalls_over_250ms ? "bad" : ""), tile("source gaps", r.source_gaps, r.source_gaps ? "warn" : ""),
+      tile("resolution", r.resolutions.join(", ") || "–"), tile("JPEG size", s(r.jpeg_kb, "mean", 1) + " KB"),
+      tile("sharpness", s(r.sharpness, "mean")), tile("brightness", s(r.brightness, "mean")),
+      tile("temporal noise σ", fmt(r.temporal_noise, 2)), tile("clipped", s(r.clipped_pct, "mean", 1) + " %"),
+      tile("ArUco rate", pct(r.aruco_detect_rate)), tile("marker edge p50", s(r.aruco_min_edge_px, "p50") + " px"),
+      tile("target rate", pct(r.target_detect_rate)),
+      ...(lag ? [tile("lag p50", s(r.lag_ms, "p50") + " ms"), tile("lag p95", s(r.lag_ms, "p95") + " ms"),
+        tile("clock seen", pct(r.clock_detect_rate) + (r.clock_ok === false ? " ✕" : ""), r.clock_ok === false ? "bad" : "")] : []),
+      tile("errors", r.error_count, r.error_count ? "bad" : ""),
+    ].join("")}</div><p class="note">${lagNote}</p>`;
+  } else {
+    $("resultsTitle").textContent = `Snapshot bench · ${r.ok}/${r.requested} captures${when}`;
+    $("results").innerHTML = `<div class="tiles">${[
+      tile("latency p50", s(r.latency_ms, "p50") + " ms"), tile("latency p95", s(r.latency_ms, "p95") + " ms"),
+      tile("latency max", s(r.latency_ms, "max") + " ms"), tile("snapshot rate", fmt(r.effective_fps) + " fps"),
+      tile("resolution", r.resolutions.join(", ") || "–"), tile("JPEG size", s(r.jpeg_kb, "mean", 1) + " KB"),
+      tile("errors", r.error_count, r.error_count ? "bad" : ""), tile("temporal noise σ", fmt(r.temporal_noise, 2)),
+      tile("ArUco rate", pct(r.aruco_detect_rate)), tile("marker edge p50", s(r.aruco_min_edge_px, "p50") + " px"),
+      tile("target rate", pct(r.target_detect_rate)),
+    ].join("")}</div>`;
+  }
+  $("results").innerHTML += `<p class="note">Report: <code>${esc(job.report)}</code></p>`;
 }
 
 async function poll() {

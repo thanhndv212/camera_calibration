@@ -37,6 +37,15 @@ python -m camera_calibration <subcommand> [options]
 | `estimate`  | Estimate camera intrinsics from a preset or auto-detection |
 | `record`    | Stream raw camera feed to rerun |
 | `view`      | Load a calibration JSON and display its summary in rerun |
+| `workbench` | Browser workbench for any camera (`--source` URI): live view, calibration, sensor controls, Benchmark tab |
+| `solve`     | Solve intrinsics headlessly from saved views (`--from dir:PATH`) |
+| `target`    | Write a printable calibration board |
+| `bench`     | Stream, snapshot and sweep benchmarks without the GUI; writes `report.json` |
+| `clock-page`| Write the lag-clock page that `bench --clock` reads |
+| `esp32-mock`| Emulate an ESP32 CameraWebServer (synthetic scene) for testing without a board |
+
+Sources are URIs: `uvc:0`, `uvc:name=USB Camera`, `esp32:<host>`, `mjpeg:<url>`,
+`dir:<path>`, `video:<file>`, `mock:`.
 
 ### Global rerun flags
 
@@ -70,6 +79,11 @@ camera-calibration capture --images 15 --rerun-save capture.rrd
 
 # Headless (no viewer window)
 camera-calibration capture --images 15 --no-spawn --rerun-save capture.rrd
+
+# Workbench on an ESP32 CameraWebServer, and the same benchmarks headless
+camera-calibration workbench --source esp32:192.168.1.42 --open
+camera-calibration bench --source esp32:192.168.1.42 --sweep --duration 10
+camera-calibration bench --source uvc:0 --duration 30
 ```
 
 ## Package layout
@@ -84,7 +98,16 @@ camera_calibration/
 │   ├── calibrator.py     # Chessboard calibration engine
 │   ├── detector.py       # ArUco detection monitor
 │   ├── markers.py        # ArUco marker generation
-│   └── estimator.py      # Webcam parameter estimation
+│   ├── estimator.py      # Webcam parameter estimation
+│   ├── sources/          # Camera sources by URI (uvc, esp32, mjpeg, dir, video, mock)
+│   ├── capture.py        # CaptureLoop: capture, analysis and preview threads
+│   ├── targets/          # ChArUco and chessboard targets
+│   ├── procedures/       # Intrinsics procedure and headless solve
+│   ├── artifact.py       # Versioned calibration file
+│   ├── bench.py          # Stream/snapshot benchmarks, image metrics, lag clock
+│   ├── esp32_mock.py     # Mock ESP32 CameraWebServer
+│   └── workbench/        # HTTP server, benchmark jobs and the page
+├── firmware/esp32_uvc/   # sdkconfig for the ESP32-S3 USB webcam build
 ├── data/                 # Saved calibration JSON / CSV files
 ├── patterns/             # Generated ArUco PNG files
 ├── tests/

@@ -50,6 +50,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `solve --from dir:PATH --out cal.json`: headless, with held-out error.
   - `target --out board.png`: a printable board labelled with its spec.
 - `mock:` renders either target (`mock:?target=charuco`).
+- **Benchmarks, ported from the ESP32 camera GUI that lived in `soarm-ws/tools`**
+  (now removed):
+  - `camera_calibration.bench`:
+    - image metrics: sharpness, brightness, clipping, temporal noise, ArUco
+      and target detection
+    - the lag clock: a marker that cycles with the host clock, for glass-to-host lag
+    - stream bench, snapshot bench, and a sweep over a control that restores the
+      control afterwards
+  - Stream timing uses every frame's receive time from `CaptureLoop`, so the
+    analysis doesn't throttle the measurement.
+  - Workbench **Benchmark** tab:
+    - live stream health and image-quality tiles
+    - two-minute charts of frame rate and interval p95
+    - stream benchmark, stream sweep, snapshot bench and snapshot sweep, run in the
+      background with a results dialog
+    - each run writes `bench_<time>/report.json` and sample frames
+  - Snapshot jobs pause the stream while they run.
+  - `/clock` serves the lag clock.
+  - Workbench **Source** tab:
+    - ArUco and thirds-grid overlay
+    - ESP32 sensor controls, grouped
+  - CLI: `bench` (the same jobs headless; `--info` lists the controls), `clock-page`,
+    and `esp32-mock`.
+- `camera_calibration.esp32_mock.MockCameraWebServer`: a CameraWebServer with
+  `/status`, `/control`, `/capture` and `/stream`, a synthetic scene and optional Wi-Fi-like
+  jitter; `port=0` for tests.
+- `CaptureLoop.timeline()` (per-frame receive times and JPEG sizes), and stats for interval
+  p50/p95/max, stalls over 250 ms and JPEG size.
+- `esp32:` sources expose all 25 CameraWebServer controls in four groups (resolution with
+  names, exposure and gain, white balance, corrections). Only the controls that `/status`
+  reports are listed, and `/status` is cached for 2 s. `esp32:HOST?stream=URL` overrides
+  the stream URL.
+- `firmware/esp32_uvc/sdkconfig.freenove`: the ESP-IDF config for running the Freenove
+  ESP32-S3 CAM as a USB webcam.
 
 ### Changed
 
@@ -59,6 +93,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   default need `--dictionary DICT_6X6_250` to be detected.
 
 ### Fixed
+
+- The workbench's `/video` stream busy-looped after the source was replaced; it now waits for
+  the new loop.
 
 - `save_calibration` saved the reprojection error of a second solve whose intrinsics it
   then discarded; it now saves the error of the solve that produced the saved intrinsics,

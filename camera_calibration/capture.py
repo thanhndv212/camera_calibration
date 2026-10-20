@@ -17,12 +17,14 @@ from __future__ import annotations
 import threading
 import time
 from collections import deque
-from typing import Any, Callable, Deque, Dict, Optional, Tuple
+from typing import Any, Callable, Deque, Dict, List, Optional, Tuple
 
 import cv2
 import numpy as np
 
 from .sources.base import BaseSource, Frame, SourceEnded, SourceInfo
+
+STALL_MS = 250  # an inter-frame gap longer than this is a stall
 
 Analyze = Callable[[Frame], Any]
 Overlay = Callable[[np.ndarray, float, Optional[Frame], Any], None]
@@ -81,6 +83,11 @@ class CaptureLoop:
         self._analysed = 0
         self._last_seq = 0
         self._analysis_ms: Deque[float] = deque(maxlen=30)
+        # (seq, t_host, jpeg bytes or 0) for every delivered frame: benchmarks
+        # read exact timing from here even when they miss frames themselves.
+        self._timeline: Deque[Tuple[int, float, int]] = deque(maxlen=8192)
+        self._stalls: Deque[float] = deque(maxlen=4096)  # t_host of each stall
+        self._stalls_total = 0
         self._preview: Tuple[int, int, Optional[bytes]] = (-1, -1, None)  # (seq, result id, jpeg)
 
     # -- lifecycle ------------------------------------------------------------
@@ -137,6 +144,11 @@ class CaptureLoop:
                 if self._last_seq and frame.seq > self._last_seq + 1:
                     self._source_gaps += frame.seq - self._last_seq - 1
                 self._last_seq = frame.seq
+                if self._timeline and (frame.t_host - self._timeline[-1][1]) * 1000 > STALL_MS:
+                    self._stalls.append(frame.t_host)
+                    self._stalls_total += 1
+                self._timeline.append((frame.seq, frame.t_host,
+                                       len(frame.jpeg) if frame.jpeg is not None else 0))
                 self._frame = frame
                 self._frames += 1
                 self._cam_rate.tick(frame.t_host)
@@ -211,6 +223,11 @@ class CaptureLoop:
                 self._cond.wait(min(left, 0.5))
             return self._result
 
+    def timeline(self, after_seq: int = 0) -> List[Tuple[int, float, int]]:
+        """``(seq, t_host, jpeg_bytes)`` of recent frames newer than *after_seq*."""
+        with self._cond:
+            return [e for e in self._timeline if e[0] > after_seq]
+
     # -- stage 3: preview -----------------------------------------------------
 
     def preview_jpeg(self) -> Optional[bytes]:
@@ -246,11 +263,15 @@ class CaptureLoop:
         ``source_gaps`` are frames the source itself skipped (its ``seq`` jumped);
         ``analysis_skipped`` are frames the camera delivered but the analysis
         worker never got to, which is expected whenever analysis is slower.
+        ``interframe_ms`` covers the last 60 frames; a stall is a gap over 250 ms.
         """
         now = time.monotonic()
         with self._cond:
             frame = self._frame
             ms = list(self._analysis_ms)
+            recent = list(self._timeline)[-61:]
+            gaps = sorted((b[1] - a[1]) * 1000 for a, b in zip(recent, recent[1:]))
+            sizes = [n for _, _, n in recent[-30:] if n]
             return {
                 "camera_fps": round(self._cam_rate.rate(now), 2),
                 "analysis_fps": round(self._ana_rate.rate(now), 2),
@@ -261,6 +282,14 @@ class CaptureLoop:
                 "source_gaps": self._source_gaps,
                 "frame_age_ms": round((now - frame.t_host) * 1000, 1) if frame else None,
                 "resolution": list(frame.img.shape[1::-1]) if frame else None,
+                "interframe_ms": {
+                    "p50": round(gaps[len(gaps) // 2], 1),
+                    "p95": round(gaps[min(len(gaps) - 1, int(round(0.95 * (len(gaps) - 1))))], 1),
+                    "max": round(gaps[-1], 1),
+                } if gaps else None,
+                "stalls_total": self._stalls_total,
+                "stalls_last_min": sum(now - t <= 60 for t in self._stalls),
+                "jpeg_kb": round(sum(sizes) / len(sizes) / 1024, 1) if sizes else None,
                 "ended": self._ended,
                 "error": self._error,
             }

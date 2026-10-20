@@ -4,6 +4,7 @@
 ``uvc:0?size=1280x720&fps=30``             USB webcam by index
 ``uvc:name=USB Camera?size=1280x720``      USB webcam by name (indices move on re-plug)
 ``esp32:192.168.1.142``                    ESP32 CameraWebServer, with its controls
+                                           (``?stream=URL`` if the stream is not on port + 1)
 ``mjpeg:http://host:81/stream``            any MJPEG-over-HTTP stream
 ``dir:runs/calib01/?fps=5&loop=1``         a directory of images
 ``video:clip.mp4?loop=1``                  a video file
@@ -71,7 +72,8 @@ def open_source(uri: str) -> BaseSource:
             return UVCSource(name=target[5:], **kw)
         return UVCSource(index=int(target or 0), **kw)
     if scheme == "esp32":
-        return ESP32Source(target, timeout=float(o.get("timeout", 5)), uri=uri)
+        return ESP32Source(target, timeout=float(o.get("timeout", 5)), uri=uri,
+                           stream=o.get("stream"))
     if scheme == "mjpeg":
         return MJPEGSource(target, uri=uri)
     if scheme == "dir":

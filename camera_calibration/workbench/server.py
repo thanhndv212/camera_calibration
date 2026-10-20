@@ -5,33 +5,42 @@
 translates HTTP to its methods. Swapping the source or the target rebuilds the
 procedure, since samples from another camera or board cannot be mixed.
 
+It also keeps live image-quality numbers, a two-minute rate history, optional
+ArUco and thirds-grid overlays, and runs benchmark jobs (:mod:`.jobs`).
+
 Endpoints: ``GET /`` (the page), ``/video`` (multipart MJPEG of the preview),
-``/frame.jpg``, ``/api/state``, ``/api/cameras``, ``/target.png?dpi=300``;
-``POST /api/source``, ``/api/control``, ``/api/target``, ``/api/snapshot`` and
+``/frame.jpg``, ``/api/state``, ``/api/cameras``, ``/target.png?dpi=300``,
+``/clock`` (the lag clock page); ``POST /api/source``, ``/api/control``,
+``/api/target``, ``/api/snapshot``, ``/api/overlay``, ``/api/job`` and
 ``/api/calib/<auto|capture|solve|drop|save|reset>``.
 """
 
 from __future__ import annotations
 
+import contextlib
 import json
 import re
 import threading
 import time
 import urllib.parse
+from collections import deque
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Deque, Dict, Iterator, List, Optional, Tuple
 
 import cv2
 import numpy as np
 
-from .. import artifact
+from .. import artifact, bench
 from ..capture import CaptureLoop
 from ..procedures import IntrinsicsProcedure
 from ..sources import Frame, list_cameras, open_source
 from ..targets import DEFAULT_TARGET, Detection, target_from_spec
+from .jobs import JobRunner
 
 PAGE = Path(__file__).with_name("workbench.html")
+HISTORY_S = 120
+NOISE_FRAMES, NOISE_WIDTH = 10, 160
 PERMISSION_HINT = ("macOS gives camera access per app: run the workbench from Terminal.app "
                    "and allow it under System Settings > Privacy & Security > Camera.")
 
@@ -57,12 +66,27 @@ class Workbench:
         self.saved: Optional[str] = None
         self._flash = 0.0
         self._lock = threading.RLock()
+        self.overlay: Dict[str, Any] = {"aruco": False, "aruco_dict": "DICT_4X4_50", "grid": False}
+        self._aruco = None
+        self.live: Dict[str, Any] = {}
+        self._live_t = 0.0
+        self._noise: Deque[np.ndarray] = deque(maxlen=NOISE_FRAMES)
+        self._aruco_hits: Deque[bool] = deque(maxlen=30)
+        self.history: Deque[Dict[str, Any]] = deque(maxlen=HISTORY_S)
+        self._history_t = 0.0
+        self._bench = False
+        self.paused = False
+        self._paused_source = None
+        self._controls: List[Dict[str, Any]] = []
+        self.jobs = JobRunner(self)
         if source:
             self.set_source(source)
 
     # -- source / target ------------------------------------------------------
 
     def set_source(self, uri: str) -> None:
+        if self.jobs.running:
+            raise RuntimeError("a benchmark is running")
         with self._lock:
             self.close()
             self.error = None
@@ -76,6 +100,7 @@ class Workbench:
                     self.error += " — " + PERMISSION_HINT
                 raise
             self.loop = loop
+            self._reset_live()
             self._new_session(info.resolution)
 
     def set_target(self, spec: str, model: Optional[str] = None) -> None:
@@ -98,6 +123,7 @@ class Workbench:
 
     def close(self) -> None:
         with self._lock:
+            self.paused = False
             if self.loop is not None:
                 self.loop.stop()
             self.loop, self.proc = None, None
@@ -106,11 +132,94 @@ class Workbench:
         if self.loop is None:
             raise RuntimeError("no source")
         self.loop.source.set_control(name, value)
+        self._noise.clear()  # the old frames no longer describe this setting
+
+    def source_object(self):
+        """The current source, also while a snapshot job has the stream paused."""
+        return self._paused_source if self.paused else (self.loop.source if self.loop else None)
+
+    def cached_controls(self) -> List[Dict[str, Any]]:
+        """Source controls, re-read except while a benchmark job owns the camera."""
+        if self.loop is not None and not self.jobs.running:
+            try:
+                self._controls = [c.to_dict() for c in self.loop.source.controls()]
+            except Exception:
+                pass
+        return self._controls
+
+    def set_overlay(self, body: Dict[str, Any]) -> Dict[str, Any]:
+        for k in ("aruco", "grid"):
+            if k in body:
+                self.overlay[k] = bool(body[k])
+        if body.get("aruco_dict"):
+            if body["aruco_dict"] not in bench.ARUCO_DICTS:
+                raise ValueError(f"unknown dictionary {body['aruco_dict']}")
+            self.overlay["aruco_dict"] = body["aruco_dict"]
+        self._aruco = (bench.aruco_detector(self.overlay["aruco_dict"])
+                       if self.overlay["aruco"] else None)
+        self._aruco_hits.clear()
+        return self.overlay
+
+    def _reset_live(self) -> None:
+        self.live, self._live_t = {}, 0.0
+        self._noise.clear()
+        self._aruco_hits.clear()
+
+    # -- benchmark hooks (used by jobs.JobRunner) -----------------------------
+
+    @contextlib.contextmanager
+    def benchmarking(self) -> Iterator[None]:
+        """Skip calibration analysis while a job measures, so it does not compete."""
+        self._bench = True
+        try:
+            yield
+        finally:
+            self._bench = False
+
+    @contextlib.contextmanager
+    def suspended(self) -> Iterator[Any]:
+        """Close the live stream, yield its source, then reopen the same URI.
+
+        The calibration session survives if the resolution comes back unchanged.
+        """
+        with self._lock:
+            if self.loop is None:
+                raise RuntimeError("no source")
+            loop, proc, session = self.loop, self.proc, self.session
+            self.loop.stop()
+            self._paused_source, self.paused, self.loop = loop.source, True, None
+        try:
+            yield loop.source
+        finally:
+            with self._lock:
+                self.paused = False
+                new = CaptureLoop(open_source(loop.source.uri), analyze=self._analyze,
+                                  overlay=self._overlay, preview_max=self.preview_max)
+                try:
+                    info = new.start()
+                except Exception as exc:
+                    self.error = f"reopening after the benchmark: {type(exc).__name__}: {exc}"
+                    raise
+                self.loop = new
+                self._reset_live()
+                if proc is not None and tuple(proc.image_size) == tuple(info.resolution):
+                    self.proc, self.session = proc, session
+                else:
+                    self._new_session(info.resolution)
 
     # -- analysis (worker thread) ---------------------------------------------
 
     def _analyze(self, frame: Frame) -> Dict[str, Any]:
         gray = cv2.cvtColor(frame.img, cv2.COLOR_BGR2GRAY) if frame.img.ndim == 3 else frame.img
+        if self._bench:
+            return {}
+        aruco = self._aruco
+        markers = None
+        if aruco is not None:
+            corners, ids, _ = aruco.detectMarkers(gray)
+            markers = (corners, ids)
+            self._aruco_hits.append(ids is not None and len(ids) > 0)
+        self._live_metrics(gray, markers)
         target, proc = self.target, self.proc
         det = target.detect(gray)
         fb = None
@@ -124,7 +233,31 @@ class Workbench:
             fb = proc.observe(frame, det)
             if fb.get("accepted"):
                 self._flash = time.monotonic()
-        return {"det": det, "fb": fb, "target": target}
+        return {"det": det, "fb": fb, "target": target, "markers": markers}
+
+    def _live_metrics(self, gray: np.ndarray, markers) -> None:
+        """Quality numbers for the page, at most twice a second."""
+        now = time.monotonic()
+        if now - self._live_t < 0.5:
+            return
+        self._live_t = now
+        m = bench.frame_metrics(gray)
+        h, w = gray.shape
+        small = cv2.resize(gray, (NOISE_WIDTH, max(1, round(h * NOISE_WIDTH / w))),
+                           interpolation=cv2.INTER_AREA).astype(np.float32)
+        if self._noise and self._noise[-1].shape != small.shape:
+            self._noise.clear()
+        self._noise.append(small)
+        m["temporal_noise"] = (float(np.stack(self._noise).std(axis=0).mean())
+                               if len(self._noise) >= 5 else None)
+        if markers is not None:
+            corners, ids = markers
+            m["aruco_ids"] = [] if ids is None else sorted(int(i) for i in ids.ravel())
+            m["aruco_min_edge_px"] = (float(min(np.linalg.norm(c[0][0] - c[0][1]) for c in corners))
+                                      if corners else None)
+            m["aruco_detect_rate"] = (sum(self._aruco_hits) / len(self._aruco_hits)
+                                      if self._aruco_hits else None)
+        self.live = m
 
     def _overlay(self, img: np.ndarray, scale: float, frame: Optional[Frame], res: Any) -> None:
         proc = self.proc
@@ -139,6 +272,14 @@ class Workbench:
             cv2.addWeighted(img, 1.0, tint, 0.25, 0, dst=img)
         if res and isinstance(res.get("det"), Detection):
             res["target"].draw(img, res["det"], scale)
+        if res and res.get("markers") is not None and res["markers"][1] is not None:
+            corners, ids = res["markers"]
+            cv2.aruco.drawDetectedMarkers(img, [c * scale for c in corners], ids)
+        if self.overlay["grid"]:
+            h, w = img.shape[:2]
+            for k in (1, 2):
+                cv2.line(img, (w * k // 3, 0), (w * k // 3, h), (200, 200, 200), 1)
+                cv2.line(img, (0, h * k // 3), (w, h * k // 3), (200, 200, 200), 1)
         if time.monotonic() - self._flash < 0.25:
             cv2.rectangle(img, (0, 0), (img.shape[1] - 1, img.shape[0] - 1), (255, 255, 255), 8)
 
@@ -195,21 +336,33 @@ class Workbench:
         cv2.imwrite(str(p), frame.img)
         return str(p)
 
+    def _sample_history(self, stats: Optional[Dict[str, Any]]) -> None:
+        """One point per second; a gap (paused, no source) is a null that breaks the line."""
+        now = time.time()
+        if now - self._history_t < 1.0:
+            return
+        self._history_t = now
+        ok = stats is not None and not stats.get("ended")
+        p95 = (stats.get("interframe_ms") or {}).get("p95") if ok else None
+        self.history.append({"t": round(now, 1), "fps": stats["camera_fps"] if ok else None,
+                             "p95": p95})
+
     def state(self) -> Dict[str, Any]:
         loop = self.loop
+        stats = loop.stats() if loop else None
+        self._sample_history(stats)
         out: Dict[str, Any] = {
             "source": loop.info.to_dict() if loop and loop.info else None,
-            "stats": loop.stats() if loop else None,
-            "controls": [], "error": self.error, "collecting": self.collecting, "auto": self.auto,
+            "stats": stats, "paused": self.paused,
+            "controls": self.cached_controls() if loop or self.paused else [],
+            "error": self.error, "collecting": self.collecting, "auto": self.auto,
             "target_spec": self.target.spec_string(), "model": self.model,
             "session": str(self.session) if self.session else None, "saved": self.saved,
             "calib": self.proc.state() if self.proc else None,
+            "overlay": self.overlay, "aruco_dicts": bench.ARUCO_DICTS,
+            "live": self.live if loop else {}, "history": list(self.history),
+            "job": self.jobs.status, "jobs": self.jobs.available(),
         }
-        if loop is not None:
-            try:
-                out["controls"] = [c.to_dict() for c in loop.source.controls()]
-            except Exception as exc:
-                out["controls_error"] = str(exc)
         return out
 
 
@@ -267,6 +420,8 @@ def make_handler(wb: Workbench):
                     self._send(buf.tobytes(), "image/png")
                 elif url.path == "/video":
                     self._video()
+                elif url.path == "/clock":
+                    self._send(bench.clock_page_html().encode(), "text/html; charset=utf-8")
                 else:
                     self._json({"error": "not found"}, 404)
             except (BrokenPipeError, ConnectionResetError):
@@ -289,6 +444,10 @@ def make_handler(wb: Workbench):
                     self._json({"target": wb.target.spec()})
                 elif path == "/api/snapshot":
                     self._json({"path": wb.snapshot()})
+                elif path == "/api/overlay":
+                    self._json(wb.set_overlay(b))
+                elif path == "/api/job":
+                    self._json(wb.jobs.start(b["kind"], b.get("params") or {}))
                 elif path.startswith("/api/calib/"):
                     self._json(wb.calib(path.rsplit("/", 1)[1], b))
                 else:
@@ -313,7 +472,8 @@ def make_handler(wb: Workbench):
                     loop_id, seq = id(loop), 0
                 frame = loop.wait_frame(after_seq=seq, timeout=1.0)
                 if frame is None:
-                    if loop.ended:
+                    # A stopped or ended loop returns at once: don't spin on it.
+                    if loop.ended or wb.loop is not loop:
                         time.sleep(0.2)
                     continue
                 seq = frame.seq
