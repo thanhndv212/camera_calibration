@@ -285,7 +285,7 @@ def find_chessboard(gray: np.ndarray, pattern: Tuple[int, int],
     corners = (corners / scale).astype(np.float32)
     # Window sized to the board's square spacing at full resolution, capped.
     spacing = float(np.median(np.linalg.norm(np.diff(corners[:pattern[0], 0], axis=0), axis=1)))
-    win = int(np.clip(spacing / 4, 3, 11))
+    win = int(np.clip(spacing / 4, 3, 11))  # same as targets.ChessboardTarget
     criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 1e-3)
     cv2.cornerSubPix(gray, corners, (win, win), (-1, -1), criteria)
     return corners

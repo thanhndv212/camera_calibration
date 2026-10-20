@@ -28,6 +28,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `Calibration.check(source_info)` refuses a file made at another resolution or with
   another camera. Pre-schema files load as version 0, and new files keep the legacy keys,
   so `load_calibration_parameters` reads both.
+- **`camera_calibration.targets`**: one `Target` interface for detection, printing and
+  synthetic rendering. **ChArUco is the default** (`charuco?squares=7x5&square=0.03&marker=0.022&dict=DICT_4X4_50`):
+  partial views still count, and corners keep their identity. Chessboard is also available
+  (`chessboard?inner=9x6&square=0.025`). Detection searches a downscaled copy and refines at full
+  resolution. The ChArUco refine window stays inside the white area between a corner
+  and its markers; a larger window biased the corners by about 0.9 px.
+- **`camera_calibration.procedures.IntrinsicsProcedure`**: live feedback (corner coverage
+  grid, steadiness, novelty against earlier views, a hint), auto- or manual capture,
+  pinhole or fisheye solve with per-view errors, drop-and-re-solve. Every fifth accepted
+  view is **held out** of the solve and its reprojection error is reported separately.
+- **`camera_calibration.workbench`**, a browser workbench on `CaptureLoop`:
+  - Any source URI, with a camera list.
+  - Live view with detections and a coverage tint.
+  - Camera and analysis rates.
+  - Source controls.
+  - Collect, solve, drop, save.
+  - A printable board at `/target.png`.
+- Subcommands:
+  - `workbench`: `--source`, `--target`, `--listen`, `--open`.
+  - `solve --from dir:PATH --out cal.json`: headless, with held-out error.
+  - `target --out board.png`: a printable board labelled with its spec.
+- `mock:` renders either target (`mock:?target=charuco`).
 
 ### Changed
 

@@ -20,15 +20,26 @@ _PX_PER_SQUARE = 40
 
 class MockSource(BaseSource):
     """``mock:`` — options ``size=640x480``, ``fps=30`` (0 = unpaced), ``frames=N``
-    (0 = endless), ``board=9x6`` inner corners, ``square=0.025`` metres,
+    (0 = endless), ``target=chessboard`` or ``charuco``, ``board=9x6`` (chessboard
+    inner corners, or ChArUco squares, default 7x5), ``square=0.025`` metres,
     ``k1=0`` radial distortion, ``noise=2`` pixel noise sigma, ``seed=0``.
     """
 
     def __init__(self, size: Tuple[int, int] = (640, 480), fps: float = 30.0, frames: int = 0,
-                 board: Tuple[int, int] = (9, 6), square: float = 0.025, k1: float = 0.0,
-                 noise: float = 2.0, seed: int = 0, uri: str = "") -> None:
+                 board: Optional[Tuple[int, int]] = None, square: float = 0.025,
+                 k1: float = 0.0, noise: float = 2.0, seed: int = 0, target: str = "chessboard",
+                 uri: str = "") -> None:
+        from ..targets import CharucoTarget, ChessboardTarget
+
         self.size, self.fps, self.frames = size, fps, frames
-        self.board, self.square, self.noise = board, square, noise
+        self.square, self.noise = square, noise
+        if target == "charuco":
+            self.target = CharucoTarget(board or (7, 5), square, square * 0.73)
+        elif target == "chessboard":
+            self.target = ChessboardTarget(board or (9, 6), square)
+        else:
+            raise ValueError(f"mock target must be chessboard or charuco, got {target!r}")
+        self.board = board or (self.target.squares if target == "charuco" else self.target.inner)
         self.uri = uri
         w, h = size
         f = 0.9 * w
@@ -43,18 +54,16 @@ class MockSource(BaseSource):
     # -- ground truth ---------------------------------------------------------
 
     def object_points(self) -> np.ndarray:
-        """Inner-corner positions in the board frame, metres, row-major like OpenCV."""
-        cols, rows = self.board
-        grid = np.mgrid[0:cols, 0:rows].T.reshape(-1, 2) * self.square
-        return np.hstack([grid, np.zeros((len(grid), 1))]).astype(np.float32)
+        """Every target corner in the board frame, metres, indexed by corner id."""
+        return self.target.all_object_points()
 
     def pose(self, seq: int) -> Tuple[np.ndarray, np.ndarray]:
         """``(rvec, tvec)`` of T_camera_board for frame *seq*: board frame -> camera frame."""
         s = seq * 0.05
         rvec = np.array([0.35 * np.sin(s), 0.45 * np.sin(0.7 * s + 1.0), 0.2 * np.sin(0.3 * s)])
         R, _ = cv2.Rodrigues(rvec)
-        cols, rows = self.board
-        center_b = np.array([(cols - 1) * self.square / 2, (rows - 1) * self.square / 2, 0.0])
+        obj = self.object_points()
+        center_b = (obj.min(axis=0) + obj.max(axis=0)) / 2
         center_c = np.array([0.04 * np.sin(0.9 * s), 0.03 * np.cos(1.1 * s),
                              0.42 + 0.08 * np.sin(0.5 * s)])
         return rvec, center_c - R @ center_b
@@ -62,14 +71,7 @@ class MockSource(BaseSource):
     # -- source protocol ------------------------------------------------------
 
     def open(self) -> SourceInfo:
-        cols, rows = self.board
-        P = _PX_PER_SQUARE
-        tex = np.full(((rows + 3) * P, (cols + 3) * P), 255, np.uint8)
-        for j in range(rows + 1):
-            for i in range(cols + 1):
-                if (i + j) % 2 == 0:
-                    tex[(j + 1) * P:(j + 2) * P, (i + 1) * P:(i + 2) * P] = 0
-        self._texture = tex
+        self._texture, self._origin_px = self.target.texture(_PX_PER_SQUARE)
         if self.dist_coeffs.any():
             # For each distorted output pixel, where it lands in the ideal image.
             w, h = self.size
@@ -80,16 +82,15 @@ class MockSource(BaseSource):
             self._maps = (ideal[..., 0].copy(), ideal[..., 1].copy())
         return SourceInfo(name="mock", unique_id="mock", transport="mock",
                           resolution=self.size, fps=self.fps or None, uri=self.uri,
-                          extra={"board": list(self.board), "square": self.square})
+                          extra={"target": self.target.spec()})
 
     def render(self, seq: int) -> np.ndarray:
         """The BGR image for frame *seq* (deterministic apart from the noise)."""
         if self._texture is None:
             raise RuntimeError("source is not open")
         P, s = _PX_PER_SQUARE, self.square
-        # Texture pixel index -> board metres. Inner corner (0, 0) is the edge between
-        # pixels 2P-1 and 2P, i.e. index 2P - 0.5 in pixel-centre coordinates.
-        off = (0.5 - 2 * P) * s / P
+        # Texture pixel index -> board metres (see Target.texture).
+        off = (0.5 - self._origin_px) * s / P
         A = np.array([[s / P, 0, off], [0, s / P, off], [0, 0, 1]])
         rvec, tvec = self.pose(seq)
         R, _ = cv2.Rodrigues(rvec)

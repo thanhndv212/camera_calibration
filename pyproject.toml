@@ -23,6 +23,9 @@ camera-calibration = "camera_calibration.__main__:main"
 where = ["."]
 include = ["camera_calibration*"]
 
+[tool.setuptools.package-data]
+"camera_calibration.workbench" = ["*.html"]
+
 [tool.ruff.lint]
 # Pinned like soarm_sdk: ruff's defaults have widened across versions.
 select = ["E4", "E7", "E9", "F"]

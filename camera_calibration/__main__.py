@@ -14,6 +14,9 @@ generate    Generate ArUco marker PNG files.
 estimate    Estimate camera intrinsics from a preset or auto-detection.
 record      Stream raw camera feed to rerun (and optionally save .rrd).
 view        Load a calibration JSON and display its summary in rerun.
+workbench   Browser workbench: any camera source, live coverage feedback, solve, save.
+solve       Calibrate from a directory or video of board images, no GUI.
+target      Write a printable calibration board (ChArUco by default).
 
 Global rerun flags (available on all subcommands)
 -------------------------------------------------
@@ -200,6 +203,54 @@ def cmd_record(args: argparse.Namespace) -> None:
     print(f"Recorded {frame_idx} frames")
 
 
+def cmd_workbench(args: argparse.Namespace) -> None:
+    """Serve the browser workbench."""
+    from .workbench import Workbench, serve
+
+    try:
+        wb = Workbench(args.source, args.target, model=args.model, save_dir=args.save_dir)
+    except Exception as exc:
+        raise SystemExit(f"could not open {args.source}: {exc}")
+    serve(wb, args.listen, open_browser=args.open)
+
+
+def cmd_solve(args: argparse.Namespace) -> None:
+    """Calibrate from every image of a finite source and write the calibration file."""
+    from . import artifact
+    from .procedures import solve_from_source
+    from .sources import open_source
+    from .targets import target_from_spec
+
+    src = args.source if ":" in args.source else f"dir:{args.source}"
+    target = target_from_spec(args.target)
+    proc, info = solve_from_source(open_source(src), target, model=args.model,
+                                   hold_out_every=args.hold_out_every)
+    r = proc.result
+    K = r.camera_matrix
+    print(f"{len(proc.samples)} views with the board ({sum(s.held_out for s in proc.samples)} held out)")
+    print(f"fx={K[0, 0]:.2f} fy={K[1, 1]:.2f} cx={K[0, 2]:.2f} cy={K[1, 2]:.2f}")
+    print(f"train RMS {r.rms:.4f} px, held-out RMS "
+          + (f"{r.held_out_error:.4f} px" if r.held_out_error is not None else "n/a"))
+    if args.out:
+        path = artifact.save(proc.artifact(info), args.out)
+        print(f"saved {path}")
+
+
+def cmd_target(args: argparse.Namespace) -> None:
+    """Write a printable board image."""
+    import cv2
+
+    from .targets import target_from_spec
+
+    t = target_from_spec(args.target)
+    img = t.render(dpi=args.dpi)
+    args.out.parent.mkdir(parents=True, exist_ok=True)
+    cv2.imwrite(str(args.out), img)
+    h, w = img.shape[:2]
+    print(f"wrote {args.out}: {w}x{h} px = {w / args.dpi * 25.4:.0f}x{h / args.dpi * 25.4:.0f} mm at "
+          f"{args.dpi} dpi; print at 100% and measure a square before calibrating")
+
+
 def cmd_view(args: argparse.Namespace) -> None:
     """Load a calibration JSON and display its summary in rerun."""
     import numpy as np
@@ -317,6 +368,36 @@ def _build_parser() -> argparse.ArgumentParser:
                    help="Camera name to search in the data directory")
     _add_rerun_args(p)
 
+    # -- workbench -----------------------------------------------------------
+    from .targets import DEFAULT_TARGET
+
+    p = sub.add_parser("workbench", help="Browser workbench for any camera")
+    p.add_argument("--source", default=None, metavar="URI",
+                   help="camera to open at start: uvc:0, 'uvc:name=USB Camera?size=1280x720', "
+                        "esp32:HOST, mjpeg:URL, dir:PATH, mock: (default: pick in the page)")
+    p.add_argument("--target", default=DEFAULT_TARGET, metavar="SPEC",
+                   help="board spec (default: %(default)s)")
+    p.add_argument("--model", choices=["pinhole", "fisheye"], default="pinhole")
+    p.add_argument("--listen", default="127.0.0.1:8000", metavar="HOST:PORT")
+    p.add_argument("--save-dir", type=Path, default=Path("runs/workbench"), dest="save_dir")
+    p.add_argument("--open", action="store_true", help="open the page in the default browser")
+
+    # -- solve ---------------------------------------------------------------
+    p = sub.add_parser("solve", help="Calibrate from saved images, no GUI")
+    p.add_argument("--from", dest="source", required=True, metavar="URI",
+                   help="dir:PATH or video:FILE (a bare path means dir:)")
+    p.add_argument("--target", default=DEFAULT_TARGET, metavar="SPEC")
+    p.add_argument("--model", choices=["pinhole", "fisheye"], default="pinhole")
+    p.add_argument("--hold-out-every", type=int, default=5, dest="hold_out_every",
+                   help="hold every Nth view out of the solve to check it (0: none)")
+    p.add_argument("--out", type=Path, default=None, help="calibration file to write")
+
+    # -- target --------------------------------------------------------------
+    p = sub.add_parser("target", help="Write a printable calibration board")
+    p.add_argument("--target", default=DEFAULT_TARGET, metavar="SPEC")
+    p.add_argument("--dpi", type=int, default=300)
+    p.add_argument("--out", type=Path, default=Path("board.png"))
+
     return parser
 
 
@@ -329,6 +410,9 @@ _COMMANDS = {
     "estimate": cmd_estimate,
     "record":   cmd_record,
     "view":     cmd_view,
+    "workbench": cmd_workbench,
+    "solve":    cmd_solve,
+    "target":   cmd_target,
 }
 
 # Import DEFAULT_DICT_NAME for use in the parser definition above

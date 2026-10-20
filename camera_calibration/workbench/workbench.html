@@ -1,0 +1,403 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Camera Workbench</title>
+<link rel="icon" href="data:,">
+<style>
+:root {
+  color-scheme: light;
+  --bg: #f3f3f1; --surface-1: #ffffff; --surface-2: #f1f1ee; --surface-3: #e7e6e2; --border: #dddcd6;
+  --text-primary: #111110; --text-secondary: #55544f; --text-muted: #8a8983;
+  --accent: #2a6fd6; --accent-ink: #fff; --accent-soft: rgba(42,111,214,.1); --series-1: #2a6fd6; --grid: #ebeae6;
+  --good: #1a7f37; --warn: #9a6700; --bad: #cf222e; --video-bg: #0c0c0c;
+  --radius: 8px; --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --shadow: 0 1px 2px rgba(0,0,0,.04);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #0f0f0e; --surface-1: #181817; --surface-2: #20201e; --surface-3: #2a2a27; --border: #2f2f2c;
+    --text-primary: #efeeea; --text-secondary: #b9b8b0; --text-muted: #85847d;
+    --accent: #4a8fe8; --accent-soft: rgba(74,143,232,.14); --series-1: #4a8fe8; --grid: #262624;
+    --good: #3fb950; --warn: #d29922; --bad: #f85149; --shadow: none;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #0f0f0e; --surface-1: #181817; --surface-2: #20201e; --surface-3: #2a2a27; --border: #2f2f2c;
+  --text-primary: #efeeea; --text-secondary: #b9b8b0; --text-muted: #85847d;
+  --accent: #4a8fe8; --accent-soft: rgba(74,143,232,.14); --series-1: #4a8fe8; --grid: #262624;
+  --good: #3fb950; --warn: #d29922; --bad: #f85149; --shadow: none;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body { margin: 0; background: var(--bg); color: var(--text-primary);
+  font: 13px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; -webkit-font-smoothing: antialiased; }
+
+/* ---- app shell: one screen, panels scroll internally if they must ---------- */
+.app { height: 100vh; display: grid; grid-template-rows: auto minmax(0, 1fr); }
+header { display: flex; align-items: center; gap: 12px; padding: 0 16px; height: 48px;
+  border-bottom: 1px solid var(--border); background: var(--surface-1); min-width: 0; }
+.brand { display: flex; align-items: center; gap: 8px; font-weight: 650; font-size: 14px; white-space: nowrap; }
+.brand svg { width: 18px; height: 18px; color: var(--accent); }
+header .src { color: var(--text-muted); font-family: var(--mono); font-size: 12px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+header .spacer { flex: 1; }
+.pill { display: inline-flex; align-items: center; gap: 6px; padding: 2px 9px; border-radius: 99px;
+  font-size: 12px; font-weight: 600; background: var(--surface-2); white-space: nowrap; }
+.pill.streaming { color: var(--good); } .pill.reconnecting, .pill.connecting { color: var(--warn); }
+.pill.paused { color: var(--accent); } .pill.error { color: var(--bad); }
+.pill svg { width: 8px; height: 8px; }
+
+main { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 12px; padding: 12px; min-height: 0; }
+.center { display: grid; grid-template-rows: minmax(0, 1fr) auto; gap: 12px; min-height: 0; min-width: 0; }
+.panel { background: var(--surface-1); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); }
+
+/* ---- video fills whatever height is left --------------------------------- */
+.video { position: relative; background: var(--video-bg); border-radius: var(--radius); overflow: hidden;
+  min-height: 0; display: grid; place-items: center; }
+.video img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; display: block; }
+.video .msg { position: relative; color: #bbb; font-size: 13px; text-align: center; padding: 20px; }
+.video .hud { position: absolute; left: 10px; top: 10px; display: flex; gap: 6px; flex-wrap: wrap; }
+.video .hud span { background: rgba(0,0,0,.62); color: #fff; font: 11px/1.6 var(--mono); padding: 1px 7px; border-radius: 4px; }
+
+
+/* ---- metrics strip --------------------------------------------------------- */
+.stats { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); }
+.stat { padding: 7px 10px; border-right: 1px solid var(--grid); min-width: 0; }
+.stat:last-child { border-right: 0; }
+.stat .k { font-size: 11px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.stat .v { font: 600 15px/1.35 var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis; }
+.stat .v small { font-size: 10.5px; color: var(--text-muted); font-weight: 400; }
+.ok { color: var(--good); } .warn { color: var(--warn); } .bad { color: var(--bad); }
+
+/* ---- sidebar ---------------------------------------------------------------- */
+aside { display: grid; grid-template-rows: auto minmax(0, 1fr); min-height: 0; overflow: hidden; }
+.tabs { display: flex; gap: 2px; padding: 6px; border-bottom: 1px solid var(--border); }
+.tabs button { flex: 1; background: transparent; color: var(--text-secondary); border: 0; border-radius: 6px;
+  padding: 6px 0; font: 600 12.5px system-ui, sans-serif; cursor: pointer; height: auto; }
+.tabs button:hover { background: var(--surface-2); }
+.tabs button[aria-selected="true"] { background: var(--accent-soft); color: var(--accent); }
+.tabpanel { overflow-y: auto; padding: 12px 14px; min-height: 0; }
+.tabpanel[hidden] { display: none; }
+h3 { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--text-muted);
+  margin: 16px 0 8px; font-weight: 650; }
+h3:first-child { margin-top: 0; }
+.row { display: flex; gap: 8px; align-items: center; margin: 8px 0; min-width: 0; flex-wrap: wrap; }
+.field { display: grid; gap: 4px; margin: 8px 0; }
+.field label { font-size: 12px; color: var(--text-secondary); }
+select, input[type=text] { background: var(--surface-2); color: var(--text-primary);
+  border: 1px solid var(--border); border-radius: 6px; height: 28px; padding: 0 8px; font: inherit; min-width: 0; }
+input[type=text] { font-family: var(--mono); font-size: 12px; }
+select:focus, input:focus { outline: 2px solid var(--accent-soft); border-color: var(--accent); }
+button { background: var(--accent); color: var(--accent-ink); border: 0; border-radius: 6px; height: 28px; padding: 0 12px;
+  font: 600 12.5px system-ui, sans-serif; cursor: pointer; white-space: nowrap; }
+button.secondary { background: var(--surface-1); color: var(--text-primary); border: 1px solid var(--border); }
+button.secondary:hover { background: var(--surface-2); }
+button.ghost { background: transparent; color: var(--text-secondary); padding: 0 6px; height: 22px; }
+button.ghost:hover { background: var(--surface-2); color: var(--bad); }
+button:disabled { opacity: .45; cursor: not-allowed; }
+.check { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-secondary); cursor: pointer; }
+.check input { accent-color: var(--accent); margin: 0; }
+.note { font-size: 12px; color: var(--text-muted); margin: 6px 0 0; overflow-wrap: anywhere; }
+.error { color: var(--bad); font-size: 12px; overflow-wrap: anywhere; margin: 6px 0; }
+a { color: var(--accent); }
+.ctl { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 2px 10px; margin: 8px 0; }
+.ctl label { font-size: 12px; color: var(--text-secondary); }
+.ctl output { font: 11.5px var(--mono); text-align: right; }
+.ctl input[type=range], .ctl select { grid-column: 1 / -1; width: 100%; accent-color: var(--accent); }
+.tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.tile { background: var(--surface-2); border-radius: 6px; padding: 6px 9px; min-width: 0; }
+.tile .k { font-size: 11px; color: var(--text-muted); }
+.tile .v { font: 600 13px var(--mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cov { display: grid; gap: 2px; margin: 4px 0; }
+.cov div { aspect-ratio: 4/3; border-radius: 2px; background: var(--surface-3); }
+.cov div.c1 { background: color-mix(in srgb, var(--good) 35%, var(--surface-3)); }
+.cov div.c2 { background: color-mix(in srgb, var(--good) 70%, var(--surface-3)); }
+.hintbox { border-radius: 7px; background: var(--accent-soft); color: var(--accent); padding: 8px 10px; font-weight: 600; }
+.views { display: grid; gap: 3px; }
+.view { display: grid; grid-template-columns: 34px 1fr 52px 26px; align-items: center; gap: 6px; font: 11.5px var(--mono); }
+.view .bar { height: 8px; background: var(--surface-3); border-radius: 2px; overflow: hidden; }
+.view .bar div { height: 100%; background: var(--series-1); }
+.view .bar div.held { background: var(--warn); }
+.view .bar div.worst { background: var(--bad); }
+.legend { display: flex; gap: 12px; font-size: 11px; color: var(--text-muted); margin: 4px 0 8px; }
+.legend i { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 4px; }
+.video .hud { position: absolute; left: 10px; top: 10px; right: 10px; display: flex; gap: 6px; flex-wrap: wrap; }
+.video .hud span { background: rgba(0,0,0,.62); color: #fff; font: 11px/1.6 var(--mono); padding: 1px 7px; border-radius: 4px; }
+.video .hud span.hint { font-family: system-ui, sans-serif; font-weight: 600; }
+header .srcbox { display: flex; gap: 6px; flex: 1; min-width: 0; max-width: 620px; }
+header .srcbox input { flex: 1; }
+@media (max-width: 900px) {
+  .app { height: auto; } main { grid-template-columns: 1fr; padding: 8px 16px; }
+  .video { aspect-ratio: 4/3; } .stats { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  header { flex-wrap: wrap; height: auto; padding: 8px 16px; } header .srcbox { max-width: none; flex-basis: 100%; }
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div class="brand"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="6" width="18" height="13" rx="2"/><circle cx="12" cy="12.5" r="3.5"/><path d="M8 6l1.5-2h5L16 6"/></svg>Camera Workbench</div>
+    <div class="srcbox">
+      <input id="uri" type="text" list="cams" placeholder="uvc:name=USB Camera?size=1280x720 · esp32:192.168.1.142 · mock:" spellcheck="false">
+      <datalist id="cams"></datalist>
+      <button id="open">Open</button>
+    </div>
+    <span class="pill" id="pill">no source</span>
+    <button class="ghost" id="theme" title="Toggle theme">◐</button>
+  </header>
+  <main>
+    <div class="center">
+      <div class="video" id="video">
+        <div class="msg" id="msg">Open a camera: pick one from the list or type a source URI.</div>
+        <img id="img" alt="" hidden>
+        <div class="hud" id="hud"></div>
+      </div>
+      <div class="panel stats" id="stats"></div>
+    </div>
+    <aside class="panel">
+      <div class="tabs" role="tablist">
+        <button role="tab" data-tab="calib" aria-selected="true">Calibrate</button>
+        <button role="tab" data-tab="results" aria-selected="false">Results</button>
+        <button role="tab" data-tab="source" aria-selected="false">Source</button>
+      </div>
+      <section class="tabpanel" id="tab-calib">
+        <h3>Target</h3>
+        <div class="field"><label for="spec">Board spec (lengths in metres, measured on the print)</label>
+          <input id="spec" type="text" spellcheck="false"></div>
+        <div class="row">
+          <select id="model"><option value="pinhole">pinhole</option><option value="fisheye">fisheye</option></select>
+          <button class="secondary" id="applyTarget">Apply</button>
+          <a id="print" href="/target.png" target="_blank">Printable board</a>
+        </div>
+        <h3>Collect</h3>
+        <div class="row">
+          <button id="collect">Start</button>
+          <label class="check"><input type="checkbox" id="auto" checked> auto-capture</label>
+          <button class="secondary" id="capture">Capture now</button>
+        </div>
+        <div class="hintbox" id="hint">—</div>
+        <div class="tiles" style="margin-top:8px">
+          <div class="tile"><div class="k">samples (train / held out)</div><div class="v" id="nSamples">—</div></div>
+          <div class="tile"><div class="k">coverage</div><div class="v" id="covFrac">—</div></div>
+          <div class="tile"><div class="k">corners · motion</div><div class="v" id="fbPts">—</div></div>
+          <div class="tile"><div class="k">novelty (≥ 0.08)</div><div class="v" id="fbNov">—</div></div>
+        </div>
+        <div class="cov" id="cov"></div>
+        <h3>Solve</h3>
+        <div class="row">
+          <button id="solve">Solve</button>
+          <button class="secondary" id="save">Save</button>
+          <button class="secondary" id="reset">Reset</button>
+        </div>
+        <div class="note" id="saved"></div>
+        <div class="error" id="calErr"></div>
+      </section>
+      <section class="tabpanel" id="tab-results" hidden>
+        <div id="noResult" class="note">Solve to see results. Every fifth accepted view is held out of the solve and checked afterwards.</div>
+        <div id="result" hidden>
+          <div class="tiles">
+            <div class="tile"><div class="k">train RMS</div><div class="v" id="rRms"></div></div>
+            <div class="tile"><div class="k">held-out RMS</div><div class="v" id="rHeld"></div></div>
+            <div class="tile"><div class="k">fx · fy</div><div class="v" id="rF"></div></div>
+            <div class="tile"><div class="k">cx · cy</div><div class="v" id="rC"></div></div>
+          </div>
+          <div class="field"><label>distortion</label><div class="note" id="rD" style="font-family:var(--mono)"></div></div>
+          <h3>Per-view error (px)</h3>
+          <div class="legend"><span><i style="background:var(--series-1)"></i>train</span><span><i style="background:var(--warn)"></i>held out</span><span><i style="background:var(--bad)"></i>worst</span></div>
+          <div class="views" id="views"></div>
+          <p class="note">Drop removes a view and solves again; held-out views are not used in the solve.</p>
+        </div>
+      </section>
+      <section class="tabpanel" id="tab-source" hidden>
+        <h3>Camera</h3>
+        <div class="tiles" id="srcInfo"></div>
+        <div class="row"><button class="secondary" id="snapshot">Save snapshot</button></div>
+        <div class="note" id="snapNote"></div>
+        <h3>Controls</h3>
+        <div id="controls"><div class="note">This source has no adjustable settings.</div></div>
+      </section>
+    </aside>
+  </main>
+</div>
+<script>
+const $ = (id) => document.getElementById(id);
+const fmt = (v, d = 2) => (v === null || v === undefined || Number.isNaN(v)) ? "—" : Number(v).toFixed(d);
+let state = null, controlsKey = "", dragging = false, specEdited = false;
+
+async function api(path, body) {
+  const r = await fetch(path, body === undefined ? {} : {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)});
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || r.statusText);
+  return j;
+}
+function showError(e) { $("calErr").textContent = e ? String(e.message || e) : ""; }
+
+// theme
+try { const t = localStorage.getItem("wb-theme"); if (t) document.documentElement.dataset.theme = t; } catch (_) {}
+$("theme").onclick = () => {
+  const dark = document.documentElement.dataset.theme ? document.documentElement.dataset.theme === "dark"
+    : matchMedia("(prefers-color-scheme: dark)").matches;
+  document.documentElement.dataset.theme = dark ? "light" : "dark";
+  try { localStorage.setItem("wb-theme", document.documentElement.dataset.theme); } catch (_) {}
+};
+
+// tabs
+document.querySelectorAll(".tabs button").forEach((b) => b.onclick = () => {
+  document.querySelectorAll(".tabs button").forEach((x) => x.setAttribute("aria-selected", x === b));
+  document.querySelectorAll(".tabpanel").forEach((p) => p.hidden = p.id !== "tab-" + b.dataset.tab);
+});
+
+// source
+async function loadCameras() {
+  try {
+    const {cameras} = await api("/api/cameras");
+    $("cams").innerHTML = cameras.map((c) => `<option value="uvc:name=${c.name}">${c.index}: ${c.name}</option>`).join("")
+      + `<option value="mock:?target=charuco">synthetic camera (test)</option>`;
+  } catch (_) {}
+}
+async function openSource() {
+  const uri = $("uri").value.trim(); if (!uri) return;
+  $("pill").textContent = "opening…"; $("pill").className = "pill connecting";
+  try { await api("/api/source", {uri}); showError(); startVideo(); }
+  catch (e) { $("pill").textContent = "error"; $("pill").className = "pill error"; $("msg").textContent = e.message; $("msg").hidden = false; }
+}
+$("open").onclick = openSource;
+$("uri").onkeydown = (e) => { if (e.key === "Enter") openSource(); };
+function startVideo() { $("img").src = "/video?t=" + Date.now(); $("img").hidden = false; $("msg").hidden = true; }
+
+// target / calibration
+$("spec").oninput = () => specEdited = true;
+$("applyTarget").onclick = async () => {
+  try { await api("/api/target", {spec: $("spec").value.trim(), model: $("model").value}); specEdited = false; showError(); }
+  catch (e) { showError(e); }
+};
+$("model").onchange = $("applyTarget").onclick;
+$("collect").onclick = () => api("/api/calib/auto", {collecting: !state?.collecting, auto: $("auto").checked}).catch(showError);
+$("auto").onchange = () => api("/api/calib/auto", {collecting: !!state?.collecting, auto: $("auto").checked}).catch(showError);
+$("capture").onclick = () => api("/api/calib/capture", {}).then(() => showError()).catch(showError);
+$("solve").onclick = () => api("/api/calib/solve", {}).then(() => { showError(); document.querySelector('[data-tab=results]').click(); }).catch(showError);
+$("save").onclick = () => api("/api/calib/save", {}).then((r) => { showError(); $("saved").textContent = "saved " + r.path; }).catch(showError);
+$("reset").onclick = () => confirm("Discard all samples?") && api("/api/calib/reset", {}).catch(showError);
+$("snapshot").onclick = () => api("/api/snapshot", {}).then((r) => $("snapNote").textContent = "saved " + r.path).catch((e) => $("snapNote").textContent = e.message);
+
+function renderControls(ctrls) {
+  const key = JSON.stringify(ctrls.map((c) => [c.name, c.kind, c.min, c.max, c.choices]));
+  if (key !== controlsKey) {
+    controlsKey = key;
+    const box = $("controls");
+    if (!ctrls.length) { box.innerHTML = '<div class="note">This source has no adjustable settings.</div>'; return; }
+    box.innerHTML = "";
+    for (const c of ctrls) {
+      const row = document.createElement("div"); row.className = "ctl";
+      const label = `<label>${c.label || c.name}</label>`;
+      if (c.kind === "bool") {
+        row.innerHTML = `<label class="check"><input type="checkbox" data-name="${c.name}"> ${c.label || c.name}</label>`;
+      } else if (c.kind === "choice") {
+        row.innerHTML = label + `<span></span><select data-name="${c.name}">${(c.choices || []).map((v) => `<option>${v}</option>`).join("")}</select>`;
+      } else {
+        row.innerHTML = label + `<output></output><input type="range" data-name="${c.name}" min="${c.min ?? 0}" max="${c.max ?? 100}" step="1">`;
+      }
+      box.appendChild(row);
+    }
+    box.querySelectorAll("[data-name]").forEach((el) => {
+      const send = () => {
+        const v = el.type === "checkbox" ? el.checked : el.tagName === "SELECT" ? (isNaN(+el.value) ? el.value : +el.value) : +el.value;
+        api("/api/control", {name: el.dataset.name, value: v}).catch((e) => $("snapNote").textContent = e.message);
+      };
+      if (el.type === "range") {
+        el.oninput = () => el.previousElementSibling.textContent = el.value;
+        el.onpointerdown = () => dragging = true; el.onpointerup = () => dragging = false;
+        el.onchange = send;
+      } else el.onchange = send;
+    });
+  }
+  if (dragging) return;
+  for (const c of ctrls) {
+    const el = $("controls").querySelector(`[data-name="${c.name}"]`); if (!el || document.activeElement === el) continue;
+    if (el.type === "checkbox") el.checked = !!c.value; else el.value = c.value;
+    if (el.type === "range") el.previousElementSibling.textContent = c.value;
+  }
+}
+
+function stat(k, v, cls = "") { return `<div class="stat"><div class="k">${k}</div><div class="v ${cls}">${v}</div></div>`; }
+
+function render(s) {
+  state = s;
+  const st = s.stats, cal = s.calib, src = s.source;
+  if (src) {
+    if (!$("uri").value) $("uri").value = src.uri;
+    $("pill").textContent = st?.error ? "error" : st?.ended ? "ended" : "streaming";
+    $("pill").className = "pill " + (st?.error ? "error" : st?.ended ? "paused" : "streaming");
+    if ($("img").hidden) startVideo();
+  } else if (s.error) { $("msg").textContent = s.error; }
+  if (!specEdited && document.activeElement !== $("spec")) $("spec").value = s.target_spec;
+  if (document.activeElement !== $("model")) $("model").value = s.model;
+  $("print").href = "/target.png?target=" + encodeURIComponent(s.target_spec);
+  $("auto").checked = s.auto;
+  $("collect").textContent = s.collecting ? "Stop" : "Start";
+  const res = cal?.result;
+  $("stats").innerHTML = [
+    stat("camera fps", fmt(st?.camera_fps, 1)),
+    stat("analysis fps", fmt(st?.analysis_fps, 1) + (st?.analysis_ms ? ` <small>${fmt(st.analysis_ms, 0)} ms</small>` : "")),
+    stat("frame age", st?.frame_age_ms != null ? fmt(st.frame_age_ms, 0) + " <small>ms</small>" : "—", st?.frame_age_ms > 500 ? "warn" : ""),
+    stat("source gaps", st ? st.source_gaps : "—", st?.source_gaps ? "warn" : ""),
+    stat("resolution", st?.resolution ? st.resolution.join("×") : "—"),
+    stat("samples", cal ? `${cal.train}<small> + ${cal.held_out}</small>` : "—"),
+    stat("train RMS", res ? fmt(res.rms, 3) + " <small>px</small>" : "—", res ? (res.rms < 0.5 ? "ok" : res.rms < 1 ? "warn" : "bad") : ""),
+    stat("held-out", res && res.held_out_error != null ? fmt(res.held_out_error, 3) + " <small>px</small>" : "—",
+      res && res.held_out_error != null ? (res.held_out_error < 2 * Math.max(res.rms, 0.25) ? "ok" : "warn") : ""),
+  ].join("");
+  const fb = cal?.feedback || {};
+  const hud = [];
+  if (fb.hint) hud.push(`<span class="hint">${fb.hint}</span>`);
+  if (fb.points) hud.push(`<span>${fb.points} corners</span>`);
+  if (s.collecting) hud.push(`<span>collecting${s.auto ? " · auto" : ""}</span>`);
+  $("hud").innerHTML = hud.join("");
+  $("hint").textContent = !src ? "open a source" : !s.collecting && s.auto ? "press Start to collect views" : (fb.hint || "—");
+  $("nSamples").textContent = cal ? `${cal.train} / ${cal.held_out}` : "—";
+  $("covFrac").textContent = cal ? Math.round(cal.coverage_frac * 100) + "%" : "—";
+  $("fbPts").textContent = fb.points ? `${fb.points} · ${fb.motion_px ?? "—"} px` : "—";
+  $("fbNov").textContent = fb.novelty ?? (fb.points ? "first" : "—");
+  $("solve").disabled = !cal?.ready; $("save").disabled = !cal?.ready; $("capture").disabled = !fb.points;
+  if (cal) {
+    const g = cal.coverage; $("cov").style.gridTemplateColumns = `repeat(${g[0].length}, 1fr)`;
+    $("cov").innerHTML = g.flat().map((n) => `<div class="${n ? (n > 40 ? "c2" : "c1") : ""}" title="${n} corners"></div>`).join("");
+  }
+  $("saved").textContent = s.saved ? "saved " + s.saved : (s.session ? "samples go to " + s.session : "");
+  if (src) {
+    $("srcInfo").innerHTML = [["name", src.name], ["transport", src.transport], ["id", src.unique_id || "—"], ["fps (nominal)", src.fps ?? "—"]]
+      .map(([k, v]) => `<div class="tile"><div class="k">${k}</div><div class="v" title="${v}">${v}</div></div>`).join("");
+    renderControls(s.controls || []);
+  }
+  renderResult(res, cal);
+}
+
+function renderResult(r, cal) {
+  $("result").hidden = !r; $("noResult").hidden = !!r; if (!r) return;
+  $("rRms").textContent = fmt(r.rms, 3) + " px";
+  $("rHeld").textContent = r.held_out_error != null ? fmt(r.held_out_error, 3) + " px" : "none held out";
+  $("rF").textContent = `${fmt(r.fx, 1)} · ${fmt(r.fy, 1)}`;
+  $("rC").textContent = `${fmt(r.cx, 1)} · ${fmt(r.cy, 1)}`;
+  $("rD").textContent = r.dist_coeffs.map((d) => fmt(d, 4)).join("  ");
+  const rows = r.per_view_errors.map((e, k) => ({i: r.train_index[k], e, held: false}));
+  let h = 0; const n = cal.samples;
+  for (let i = 0; i < n; i++) if (!r.train_index.includes(i)) rows.push({i, e: r.held_out_per_view[h++], held: true});
+  rows.sort((a, b) => a.i - b.i);
+  const max = Math.max(...rows.map((x) => x.e ?? 0), 1e-6), worst = Math.max(...r.per_view_errors);
+  $("views").innerHTML = rows.map((x) => `<div class="view"><span>#${x.i}</span><div class="bar"><div class="${x.held ? "held" : x.e === worst ? "worst" : ""}" style="width:${100 * (x.e ?? 0) / max}%"></div></div><span>${fmt(x.e, 3)}</span><button class="ghost" data-drop="${x.i}" title="Drop this view">✕</button></div>`).join("");
+  $("views").querySelectorAll("[data-drop]").forEach((b) => b.onclick = () => api("/api/calib/drop", {index: +b.dataset.drop}).then(() => showError()).catch(showError));
+}
+
+async function poll() {
+  try { render(await api("/api/state")); } catch (_) { $("pill").textContent = "offline"; $("pill").className = "pill error"; }
+  setTimeout(poll, 500);
+}
+loadCameras(); poll();
+</script>
+</body>
+</html>

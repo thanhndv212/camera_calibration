@@ -82,7 +82,8 @@ def open_source(uri: str) -> BaseSource:
     if scheme == "mock":
         return MockSource(
             size=_wxh(o.get("size", "640x480")), fps=float(o.get("fps", 30)),
-            frames=int(o.get("frames", 0)), board=_wxh(o.get("board", "9x6")),
+            frames=int(o.get("frames", 0)), target=o.get("target", "chessboard"),
+            board=_wxh(o["board"]) if "board" in o else None,
             square=float(o.get("square", 0.025)), k1=float(o.get("k1", 0)),
             noise=float(o.get("noise", 2)), seed=int(o.get("seed", 0)), uri=uri)
     raise ValueError(f"unknown camera scheme {scheme!r} in {uri!r}")
