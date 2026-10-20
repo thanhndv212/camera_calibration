@@ -12,6 +12,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `LICENSE` (MIT), matching the license declared in `pyproject.toml`.
 - This file.
 - Ruff lint selection pinned in `pyproject.toml` (`E4,E7,E9,F`, as in `soarm_sdk`).
+- **`camera_calibration.sources`** — one `CameraSource` protocol for any camera, picked
+  by URI: `uvc:0`, `uvc:name=USB Camera` (resolved to an index when opened, since indices
+  move on re-plug), `esp32:<host>` (with its `/control` settings), `mjpeg:<url>`,
+  `dir:<path>`, `video:<file>`, and `mock:` (a synthetic pinhole camera with known
+  intrinsics and poses, for tests).
+- **`camera_calibration.capture.CaptureLoop`** — capture thread, analysis worker and
+  preview encoder that never block one another, so slow detection lowers the analysis
+  rate instead of the camera rate. Reports camera fps and analysis fps separately.
+  `find_chessboard` searches a downscaled copy and refines with `cornerSubPix` at full
+  resolution.
+- **`camera_calibration.artifact`** — versioned calibration file (`schema_version` 1):
+  camera identity, capture settings, target spec, model, intrinsics, named transforms
+  (`T_<to>_<from>`), per-view and held-out errors, inputs, and a content hash.
+  `Calibration.check(source_info)` refuses a file made at another resolution or with
+  another camera. Pre-schema files load as version 0, and new files keep the legacy keys,
+  so `load_calibration_parameters` reads both.
 
 ### Changed
 
