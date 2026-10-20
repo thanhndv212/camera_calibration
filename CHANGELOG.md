@@ -11,6 +11,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `LICENSE` (MIT), matching the license declared in `pyproject.toml`.
 - This file.
+- Ruff lint selection pinned in `pyproject.toml` (`E4,E7,E9,F`, as in `soarm_sdk`).
+
+### Changed
+
+- **One default ArUco dictionary, `DICT_4X4_50`,** for both `generate` and `detect`
+  (generation used `DICT_6X6_250`, detection `DICT_4X4_50`, so a marker generated with the
+  defaults was never detected with the defaults). Markers already printed from the old
+  default need `--dictionary DICT_6X6_250` to be detected.
+
+### Fixed
+
+- `save_calibration` saved the reprojection error of a second solve whose intrinsics it
+  then discarded; it now saves the error of the solve that produced the saved intrinsics,
+  and refuses to save before `calibrate_camera()`.
+- `calibrator.py` raised `NameError` on a malformed `--pattern-size` (missing `argparse`
+  import).
+- README license now says MIT, matching `LICENSE` and `pyproject.toml`.
 
 ## [0.1.0] — 2026-05-10
 

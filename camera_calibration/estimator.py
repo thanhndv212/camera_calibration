@@ -222,7 +222,7 @@ def print_parameters_summary(params: Dict[str, object]) -> None:
     print(f"Description : {params.get('description', 'N/A')}")
     print(f"Resolution  : {resolution[0]} x {resolution[1]}")
     print(f"Field of view: {params['fov']:.1f}°")
-    print(f"\nCamera Matrix:")
+    print("\nCamera Matrix:")
     print(f"  fx = {K[0, 0]:.2f}  fy = {K[1, 1]:.2f}")
     print(f"  cx = {K[0, 2]:.2f}  cy = {K[1, 2]:.2f}")
     print(f"\nDistortion: {d.flatten()}")

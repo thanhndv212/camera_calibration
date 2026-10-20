@@ -9,8 +9,7 @@ from typing import Iterable, Optional, Set, Tuple
 import cv2
 
 from . import _viz
-
-DEFAULT_DICT_NAME = "DICT_4X4_50"
+from .markers import DEFAULT_DICT_NAME
 
 __all__ = ["get_detector", "run_detection_monitor"]
 

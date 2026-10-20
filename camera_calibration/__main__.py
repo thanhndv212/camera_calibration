@@ -24,7 +24,6 @@ Global rerun flags (available on all subcommands)
 from __future__ import annotations
 
 import argparse
-import sys
 from pathlib import Path
 from typing import Tuple
 
@@ -282,8 +281,8 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--marker-id", type=int, default=0, dest="marker_id")
     p.add_argument("--size", type=int, default=400, metavar="PX",
                    help="Marker image side length in pixels (default: 400)")
-    p.add_argument("--dict", default="DICT_6X6_250",
-                   help="ArUco dictionary (default: DICT_6X6_250)")
+    p.add_argument("--dict", default=DEFAULT_DICT_NAME,
+                   help=f"ArUco dictionary (default: {DEFAULT_DICT_NAME})")
     p.add_argument("--output", type=Path, default=None,
                    help="Explicit output path for the single marker PNG")
     p.add_argument("--sheet", type=int, default=0, metavar="N",

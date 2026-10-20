@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import json
 import pickle
 import threading
@@ -66,6 +67,7 @@ class CameraCalibrator:
         self.camera_matrix: Optional[np.ndarray] = None
         self.dist_coeffs: Optional[np.ndarray] = None
         self.image_size: Optional[Tuple[int, int]] = None
+        self.reprojection_error: Optional[float] = None
 
         print(
             f"Calibrator ready: {chessboard_size[0]}x{chessboard_size[1]} "
@@ -245,6 +247,7 @@ class CameraCalibrator:
             else "Poor — consider recalibrating"
         )
         print(f"Reprojection error: {rpe:.4f} px ({quality})")
+        self.reprojection_error = float(rpe)
 
         _viz.log_calibration_result(
             self.camera_matrix,
@@ -276,17 +279,13 @@ class CameraCalibrator:
             if not stem.is_absolute():
                 stem = DATA_DIR / stem
 
+        if self.camera_matrix is None or self.reprojection_error is None:
+            raise ValueError("Nothing to save: run calibrate_camera() first")
         stem.parent.mkdir(parents=True, exist_ok=True)
 
-        # Re-run calibration with the current intrinsic guess to get final RPE
-        rpe = cv2.calibrateCamera(
-            self.objpoints,
-            self.imgpoints,
-            self.image_size,
-            self.camera_matrix,
-            self.dist_coeffs,
-            flags=cv2.CALIB_USE_INTRINSIC_GUESS,
-        )[0]
+        # Save the error of the solve that produced these intrinsics. Re-solving
+        # here would report the error of a different camera matrix.
+        rpe = self.reprojection_error
 
         data = {
             "camera_matrix": self.camera_matrix.tolist(),

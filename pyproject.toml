@@ -22,3 +22,11 @@ camera-calibration = "camera_calibration.__main__:main"
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["camera_calibration*"]
+
+[tool.ruff.lint]
+# Pinned like soarm_sdk: ruff's defaults have widened across versions.
+select = ["E4", "E7", "E9", "F"]
+
+[tool.ruff.lint.per-file-ignores]
+# Path constants are defined before the re-exports on purpose.
+"camera_calibration/__init__.py" = ["E402"]

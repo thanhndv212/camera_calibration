@@ -15,7 +15,9 @@ from . import _viz
 PATTERNS_DIR = Path(__file__).resolve().parents[1] / "patterns"
 PATTERNS_DIR.mkdir(parents=True, exist_ok=True)
 
-DEFAULT_DICT_NAME = "DICT_6X6_250"
+# One dictionary for generation and detection: a marker printed with one
+# dictionary is invisible to a detector configured with another.
+DEFAULT_DICT_NAME = "DICT_4X4_50"
 
 __all__ = [
     "DEFAULT_DICT_NAME",
@@ -33,7 +35,7 @@ def get_aruco_dictionary(
     """Return the requested ArUco dictionary and an OpenCV-4.7+ API flag.
 
     Args:
-        dict_name: OpenCV aruco dictionary name (e.g. ``"DICT_6X6_250"``).
+        dict_name: OpenCV aruco dictionary name (e.g. ``"DICT_4X4_50"``).
 
     Returns:
         ``(dictionary, modern_api)`` where *modern_api* is ``True`` when the
